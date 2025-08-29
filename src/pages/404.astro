@@ -1,0 +1,31 @@
+---
+// File: src/pages/404.astro
+import BaseLayout from "../layouts/BaseLayout.astro";
+
+const title = "404 – Scene not found";
+const description = "Lost on the way to Paradise City.";
+---
+
+<BaseLayout {title} {description}>
+  <section class="container-xl pt-28 pb-24">
+    <div class="mx-auto max-w-2xl text-center">
+      <p class="text-xs font-semibold tracking-widest text-gray-500">HTTP 404</p>
+      <h1 class="mt-2 text-5xl md:text-6xl font-bold leading-tight text-black">
+        Scene not found
+      </h1>
+      <p class="mt-4 text-base text-gray-600 italic">
+        Lost on the way to Paradise City.
+      </p>
+
+      <div class="mt-8 flex justify-center">
+        <a href="/" class="inline-flex items-center gap-2 rounded-xl px-6 py-3 bg-black text-white font-medium hover:opacity-90 transition">
+          <!-- tiny guitar icon -->
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M20.5 3.5a1.5 1.5 0 0 0-2.12 0l-1.18 1.18-.7-.7a1 1 0 1 0-1.41 1.41l.7.7-6.3 6.3a3.5 3.5 0 1 0 1.41 1.41l6.3-6.3.7.7a1 1 0 1 0 1.41-1.41l-.7-.7 1.18-1.18a1.5 1.5 0 0 0 0-2.12Z"/>
+          </svg>
+          <span>Take me Home</span>
+        </a>
+      </div>
+    </div>
+  </section>
+</BaseLayout>

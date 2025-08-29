@@ -1,0 +1,73 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+
+const title = "Terms of Service – MLKFS";
+const description = "The rules for using MLKFS’s website and services.";
+---
+
+<BaseLayout {title} {description}>
+  <section class="container-xl pt-28 pb-24">
+    <div class="mx-auto max-w-3xl">
+      <h1 class="text-4xl md:text-5xl font-bold leading-tight text-black">Terms of Service</h1>
+      <p class="mt-2 text-sm text-gray-500">Last updated: {new Date().toISOString().slice(0,10)}</p>
+
+      <div class="mt-8 content-plain" style="font-family:'Courier New', Courier, monospace;">
+        <h2>1. Acceptance of terms</h2>
+        <p>
+          By using this website, you agree to these Terms. If you do not agree, please do not use the site.
+        </p>
+
+        <h2>2. Services</h2>
+        <p>
+          MLKFS provides remote post‑production services (editing, color grading, sound design & mix, and related services).
+          Project‑specific terms (scope, timeline, pricing, deliverables) will be set out in a separate statement of work or contract.
+        </p>
+
+        <h2>3. Intellectual property</h2>
+        <p>
+          This site and its content (text, graphics, logos, brand marks) are owned by MLKFS and protected by law. You may not
+          copy, modify, or redistribute site content without permission. Client materials remain the property of the client.
+        </p>
+
+        <h2>4. Portfolio use</h2>
+        <p>
+          Unless a project agreement states otherwise, MLKFS may reference completed work in our portfolio and marketing, following
+          any confidentiality obligations.
+        </p>
+
+        <h2>5. Disclaimer & limitation of liability</h2>
+        <p>
+          The site is provided "as is" without warranties. To the fullest extent permitted by law, MLKFS will not be liable for
+          any indirect, incidental, or consequential damages arising from your use of the site.
+        </p>
+
+        <h2>6. Third‑party services</h2>
+        <p>
+          We may link to or integrate third‑party services (e.g., hosting, email, video platforms). We are not responsible for
+          their content or practices.
+        </p>
+
+        <h2>7. Governing law</h2>
+        <p>
+          These Terms are governed by the laws of the State of California, without regard to conflict of laws principles.
+        </p>
+
+        <h2>8. Changes</h2>
+        <p>
+          We may update these Terms from time to time. We will post the revised version with a new “Last updated” date.
+        </p>
+
+        <h2>9. Contact</h2>
+        <p>
+          Questions? Contact <a href="mailto:info@mlkfs.com">info@mlkfs.com</a>.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <style>
+    .content-plain p { margin: 1rem 0; }
+    .content-plain ul { margin: 1rem 0; padding-left: 1.25rem; list-style: disc; }
+    .content-plain h2 { margin: 1.5rem 0 0.5rem; font-weight: 600; }
+  </style>
+</BaseLayout>

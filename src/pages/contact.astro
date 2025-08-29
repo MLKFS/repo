@@ -1,0 +1,87 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+
+const title = "Contact – MLKFS";
+const description = "Get in touch with MLKFS: office line, email, and a quick contact form.";
+---
+
+<BaseLayout {title} {description}>
+  <section class="container-xl pt-28 pb-24">
+    <div class="mx-auto max-w-4xl">
+      <div class="text-center">
+        <h1 class="text-4xl md:text-5xl font-bold leading-tight text-black">Contact</h1>
+        <p class="mt-3 text-base text-gray-600">We’d love to hear from you.</p>
+      </div>
+
+      <!-- Contact cards -->
+      <div class="mt-10 grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div class="rounded-2xl border border-black/10 bg-white p-5">
+          <h2 class="text-sm font-semibold text-black/70">MLKFS Office</h2>
+          <p class="mt-2 text-base text-black">1401 21st Suite 4891<br/>Sacramento, CA 95811</p>
+        </div>
+        <div class="rounded-2xl border border-black/10 bg-white p-5">
+          <h2 class="text-sm font-semibold text-black/70">Office line (virtual secretary)</h2>
+          <p class="mt-2 text-base"><a class="underline" href="tel:+19165465307">+1 (916) 546‑5307</a></p>
+        </div>
+        <div class="rounded-2xl border border-black/10 bg-white p-5">
+          <h2 class="text-sm font-semibold text-black/70">Email</h2>
+          <p class="mt-2 text-base"><a class="underline" href="mailto:info@mlkfs.com">pr@mlkfs.com</a></p>
+        </div>
+      </div>
+
+      <!-- Quick contact form (static-friendly; replace action with your endpoint) -->
+      <div class="mt-12 rounded-2xl border border-black/10 bg-white p-6">
+        <h2 class="text-lg font-semibold text-black">Send a message</h2>
+        <p class="mt-1 text-sm text-gray-500">We usually reply within one business day.</p>
+        <form class="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4" method="POST" action="https://formspree.io/f/xanbpgvb">
+          <!-- Honeypot -->
+          <input type="text" name="_gotcha" class="hidden" tabindex="-1" autocomplete="off" />
+
+          <div>
+            <label class="block text-sm text-gray-700">Name</label>
+            <input required name="name" type="text" class="mt-1 w-full rounded-xl border border-black/10 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-black/20" />
+          </div>
+          <div>
+            <label class="block text-sm text-gray-700">Email</label>
+            <input required name="email" type="email" class="mt-1 w-full rounded-xl border border-black/10 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-black/20" />
+          </div>
+          <div>
+            <label class="block text-sm text-gray-700">Project type</label>
+            <select name="project" class="mt-1 w-full rounded-xl border border-black/10 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-black/20">
+              <option value="Editing">Editing</option>
+              <option value="Color grading">Color grading</option>
+              <option value="Sound design / mix">Sound design / mix</option>
+              <option value="YouTube management">YouTube management</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-sm text-gray-700">Budget</label>
+            <select name="budget" class="mt-1 w-full rounded-xl border border-black/10 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-black/20">
+              <option value="Under $1k">Under $1k</option>
+              <option value="$1k–$3k">$1k–$3k</option>
+              <option value="$3k–$10k">$3k–$10k</option>
+              <option value="Over $10k">Over $10k</option>
+            </select>
+          </div>
+          <div class="md:col-span-2">
+            <label class="block text-sm text-gray-700">Message</label>
+            <textarea required name="message" rows="5" class="mt-1 w-full rounded-xl border border-black/10 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-black/20"></textarea>
+          </div>
+          <div class="md:col-span-2 flex items-center justify-between">
+            <label class="inline-flex items-center gap-2 text-sm text-gray-600">
+              <input type="checkbox" name="consent" required class="rounded border-black/20" />
+              I agree to be contacted about my request.
+            </label>
+            <button type="submit" class="inline-flex items-center justify-center rounded-xl px-5 py-3 bg-black text-white font-medium hover:opacity-90 transition">
+              Send
+            </button>
+          </div>
+          <input type="hidden" name="_subject" value="New inquiry from mlkfs.com" />
+       <input type="hidden" name="_redirect" value="http://localhost:4321/thanks" />
+
+        </form>
+      </div>
+    </div>
+  </section>
+</BaseLayout>

@@ -1,0 +1,156 @@
+---
+const links = [
+  { href: '/services', label: 'Services' },
+  { href: '/work',      label: 'Work' },
+  { href: '/about',     label: 'About' },
+  { href: '/contact',   label: 'Contact' },
+];
+---
+<nav class="navbar relative">
+  <div class="container-xl h-16 flex items-center justify-between">
+    <!-- Logo (left) -->
+    <a href="/" class="logo-link flex items-center justify-center h-16 px-4  group">
+      <img
+        src="/mlkfs-logo.png"
+        alt="MLKFS"
+        width="88"
+        class="logo invert-toggle block transition duration-200"
+        loading="eager"
+        decoding="async"
+      />
+    </a>
+
+    <!-- Desktop links (right) -->
+    <div class="hidden md:flex items-center gap-0">
+      {links.map((l) => (
+        <a class="link px-3 py-2 rounded-[1px] transition hover:bg-black hover:text-white" href={l.href}>
+          {l.label}
+        </a>
+      ))}
+    </div>
+
+    <!-- Mobile: hamburger (right) -->
+    <button
+      id="nav-toggle"
+      class="md:hidden inline-flex items-center justify-center w-10 h-10 text-black transition hover:bg-black hover:text-white rounded-full"
+      aria-controls="mobile-menu"
+      aria-expanded="false"
+      type="button"
+    >
+      <span class="sr-only">Toggle menu</span>
+      <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+        <path d="M5 7h14" />
+        <path d="M5 12h14" />
+        <path d="M5 17h14" />
+      </svg>
+    </button>
+  </div>
+  
+<!-- Mobile menu panel: RIGHT-aligned dropdown -->
+<div id="mobile-menu" 
+     class="md:hidden absolute right-0 top-16 w-full  
+            overflow-hidden transition-all duration-300 max-h-0 opacity-0">
+  <div class=" text-right">
+    {links.map((l) => (
+      <a class="block link py-2 px-3  transition hover:bg-black hover:text-white" href={l.href}>
+        {l.label}
+      </a>
+    ))}
+  </div>
+</div>
+
+<script is:inline>
+  const nav      = document.currentScript.closest('nav');
+  const btn      = nav.querySelector('#nav-toggle');
+  const panel    = nav.querySelector('#mobile-menu');
+  const logoLink = nav.querySelector('.logo-link');
+
+  /* scroll state */
+  const onScroll = () => {
+    if (window.scrollY > 8) nav.classList.add('scrolled');
+    else nav.classList.remove('scrolled');
+    if (nav.classList.contains('logo-bg-on')) setLogoStripWidth();
+  };
+  onScroll();
+  window.addEventListener('scroll', onScroll, { passive: true });
+
+  /* mobile toggle - sadece aria-expanded */
+  btn?.addEventListener('click', () => {
+    const expanded = btn.getAttribute('aria-expanded') === 'true';
+    btn.setAttribute('aria-expanded', String(!expanded));
+    nav.classList.toggle('has-panel', !expanded);
+
+    if (!expanded) {
+      panel.style.maxHeight = panel.scrollHeight + "px";
+      panel.style.opacity = "1";
+    } else {
+      panel.style.maxHeight = "0px";
+      panel.style.opacity = "0";
+    }
+  });
+
+  // dışa tıkla → kapat
+  document.addEventListener('click', (e) => {
+    if (btn.contains(e.target) || panel.contains(e.target)) return;
+    btn.setAttribute('aria-expanded','false');
+    nav.classList.remove('has-panel');
+    panel.style.maxHeight = "0px";
+    panel.style.opacity = "0";
+  });
+
+  // ESC → kapat
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      btn.setAttribute('aria-expanded','false');
+      nav.classList.remove('has-panel');
+      panel.style.maxHeight = "0px";
+      panel.style.opacity = "0";
+    }
+  });
+
+  // md ve üstü olunca kapat
+  const mq = window.matchMedia('(min-width: 768px)');
+  mq.addEventListener('change', () => {
+    btn.setAttribute('aria-expanded','false');
+    nav.classList.remove('has-panel');
+    panel.style.maxHeight = "0px";
+    panel.style.opacity = "0";
+  });
+  
+  
+
+  /* --- Logo şerit hesaplama kodların aynı kaldı --- */
+  const setLogoStripWidth = () => {
+    if (!logoLink) return;
+    const r = logoLink.getBoundingClientRect();
+    const left   = r.left;
+    const width  = r.width;
+    const stripW = (left * 2) + width;
+    nav.style.setProperty('--logo-strip-w', stripW + 'px');
+  };
+
+  const showStrip = () => { setLogoStripWidth(); nav.classList.add('logo-bg-on'); };
+  const hideStrip = () => nav.classList.remove('logo-bg-on');
+
+  logoLink?.addEventListener('mouseenter', showStrip);
+  logoLink?.addEventListener('mouseleave', hideStrip);
+  logoLink?.addEventListener('touchstart', () => { showStrip(); setTimeout(hideStrip, 250); }, { passive: true });
+
+  setLogoStripWidth();
+  window.addEventListener('resize', setLogoStripWidth, { passive: true });
+
+  function inStripArea(evt) {
+    const rect = nav.getBoundingClientRect();
+    const x = evt.clientX - rect.left;
+    const y = evt.clientY - rect.top;
+    const cssW = getComputedStyle(nav).getPropertyValue('--logo-strip-w').trim();
+    const stripW = parseFloat(cssW) || 0;
+    return y >= 0 && y <= rect.height && x >= 0 && x <= stripW;
+  }
+
+  nav.addEventListener('click', (e) => {
+    if (e.target.closest('#nav-toggle') || e.target.closest('.link') || e.target.closest('.logo-link')) return;
+    if (inStripArea(e)) window.location.href = '/';
+  });
+</script>
+</nav>

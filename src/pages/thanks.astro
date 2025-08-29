@@ -1,0 +1,20 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+
+const title = "Thanks – MLKFS";
+const description = "We received your message.";
+---
+
+<BaseLayout {title} {description}>
+  <section class="container-xl pt-28 pb-24">
+    <div class="mx-auto max-w-2xl text-center">
+      <h1 class="text-4xl md:text-5xl font-bold leading-tight text-black">Thanks!</h1>
+      <p class="mt-3 text-base text-gray-600">We received your message and will get back within one business day.</p>
+      <p class="mt-2 text-sm text-gray-500">Need something urgent? Call <a class="underline" href="tel:+19165465307">+1 (916) 546‑5307</a> or email <a class="underline" href="mailto:info@mlkfs.com">info@mlkfs.com</a>.</p>
+      <div class="mt-8 flex justify-center gap-3">
+        <a href="/" class="inline-flex items-center justify-center rounded-xl px-5 py-3 bg-black text-white font-medium hover:opacity-90 transition">Back to home</a>
+        <a href="/contact" class="inline-flex items-center justify-center rounded-xl px-5 py-3 border border-black text-black font-medium hover:bg-black hover:text-white transition">Send another</a>
+      </div>
+    </div>
+  </section>
+</BaseLayout>
