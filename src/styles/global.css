@@ -1,83 +1,54 @@
 @import "tailwindcss";
-
-/* Font smoothing */
 html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
-
-/* Helpers */
 .container-xl { @apply max-w-6xl mx-auto px-4; }
 .btn-primary  { @apply inline-flex items-center justify-center rounded-xl px-5 py-3 bg-white text-black font-medium hover:opacity-90 transition; }
-
-/* -------------------- NAVBAR -------------------- */
 .navbar { @apply fixed top-0 inset-x-0 z-50 transition-colors duration-300; }
 .navbar:not(.scrolled) { @apply bg-white; }
 .navbar.scrolled       { @apply bg-black/90 backdrop-blur border-b border-white/10; }
-.navbar.has-panel      { @apply border-b-0; } /* panel açıkken seam yok */
-
-/* Logo (invert on scroll) */
+.navbar.has-panel      { @apply border-b-0; } 
 .logo { transition: filter .3s ease; }
 .navbar:not(.scrolled) .logo { filter: invert(0); }
 .navbar.scrolled       .logo { filter: invert(1) brightness(100%); }
-
-/* -------------------- LINKS -------------------- */
 .link { @apply transition  px-2 py-5; }
 .navbar:not(.scrolled) .link       { @apply text-black; }
 .navbar:not(.scrolled) .link:hover { @apply bg-black text-white; }
 .navbar.scrolled .link             { @apply text-white; }
 .navbar.scrolled .link:hover       { @apply bg-white text-black; }
-
-
-/* -------------------- HAMBURGER -------------------- */
 #nav-toggle                  { @apply text-black transition; }
 .navbar.scrolled #nav-toggle { @apply text-white; }
 .navbar:not(.scrolled) #nav-toggle:hover { @apply bg-black text-white rounded-full; }
 .navbar.scrolled       #nav-toggle:hover { @apply bg-white text-black rounded-full; }
-
-/* -------------------- MOBILE DROPDOWN -------------------- */
 #mobile-menu {
   @apply transition-all duration-300 overflow-hidden;
   max-height: 0;
   opacity: 0;
 }
-
 #nav-toggle[aria-expanded="true"] ~ #mobile-menu {
-  max-height: 500px; /* içerik boyuna göre ayarla */
+  max-height: 500px; 
   opacity: 1;
 }
-
 .navbar:not(.scrolled) #mobile-menu { @apply bg-white text-black backdrop-blur; }
 .navbar.scrolled       #mobile-menu { @apply bg-black/90 text-white backdrop-blur; }
 .navbar:not(.scrolled) #mobile-menu .link:hover { @apply bg-black text-white; }
 .navbar.scrolled       #mobile-menu .link:hover { @apply bg-white text-black; }
-
-/* -------------------- LOGO STRIP (navbar ::before) -------------------- */
-/* Kayma yok: width animasyonu yok, sadece opacity/renk .3s */
 .navbar::before {
   content: "";
   position: absolute;
   top: 0;
   left: 0;
-  height: 4rem;                        /* h-16 */
-  width: var(--logo-strip-w, 0px);     /* genişlik JS'ten */
-  opacity: 0;                          /* başlangıçta gizli */
+  height: 4rem;                        
+  width: var(--logo-strip-w, 0px);     
+  opacity: 0;                          
   transition: opacity .3s ease, background-color .3s ease;
-  pointer-events: none;                /* tıklamayı engellemesin */
-  z-index: 0;                          /* içerikten altta kalsın */
+  pointer-events: none;                
+  z-index: 0;                          
 }
-
-/* Şerit aktifken görünür */
 .navbar.logo-bg-on::before { opacity: 1; }
-
-/* Renkler scroll durumuna göre */
 .navbar:not(.scrolled).logo-bg-on::before { background-color: rgb(0 0 0); }
 .navbar.scrolled.logo-bg-on::before      { background-color: rgb(255 255 255); }
-
-/* İçerik şeridin üstünde kalsın */
 .navbar > .container-xl {
   position: relative;
   z-index: 1;
 }
-
-/* Şerit açıkken logo tersinsin (görsel tutarlılık) */
 .navbar:not(.scrolled).logo-bg-on .logo { filter: invert(1) brightness(100%); }
 .navbar.scrolled.logo-bg-on .logo       { filter: invert(0); }
-
