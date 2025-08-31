@@ -83,26 +83,35 @@ const description = "Get in touch with MLKFS: office line, email, and a quick co
 </BaseLayout>
 
 <script is:inline>
-  const form = document.querySelector('form[method="POST"][action^="https://formspree.io/"]');
+  const form = document.getElementById('contact-form');
   if (form) {
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
+
       try {
         const res = await fetch(form.action, {
           method: 'POST',
-          headers: { Accept: 'application/json' },
+          headers: { 'Accept': 'application/json' },
           body: new FormData(form),
         });
+
         if (res.ok) {
           window.location.href = '/thanks';
-        } else {
-          // istersen burada alert gösterebilirsin
-          window.location.href = '/thanks'; // yine de thanks'e götür
+          return;
         }
-      } catch {
+
+        try {
+          const data = await res.json();
+          if (data?.ok === true) {
+            window.location.href = '/thanks';
+            return;
+          }
+        } catch (_) {}
+
+        window.location.href = '/thanks';
+      } catch (_) {
         window.location.href = '/thanks';
       }
     });
   }
 </script>
-
