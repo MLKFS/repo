@@ -1,10 +1,9 @@
 ---
 const year = new Date().getFullYear();
 ---
-<footer class="relative isolate   overflow-hidden">
-  {/* Arka plan: süt köpüğü */}
+<footer class="relative isolate overflow-hidden">
   <img
-    src="/assets/mlkfoams.png"   /* dosya: /public/milkfoams.webp */
+    src="/assets/mlkfoams.png"
     alt=""
     aria-hidden="true"
     class="absolute left-0 bottom-0 -z-10 pointer-events-none select-none
@@ -15,9 +14,7 @@ const year = new Date().getFullYear();
     loading="lazy" decoding="async"
   />
 
-  {/* İnce tüylü kanatlar separator */}
   <div class="relative z-10 container-xl pt-8 flex justify-center gap-5">
-    <!-- Sol kanat -->
     <svg
       class="w-16 h-16 text-gray-400/20 -scale-x-100 origin-center"
       viewBox="0 0 140 140"
@@ -45,7 +42,6 @@ const year = new Date().getFullYear();
       <path d="M50 104 C 62 97, 76 88, 73 74" />
     </svg>
 
-    <!-- Sağ kanat -->
     <svg
       class="w-16 h-16 text-gray-400/20"
       viewBox="0 0 140 140"
@@ -74,13 +70,12 @@ const year = new Date().getFullYear();
     </svg>
   </div>
 
-  {/* Yazılar */}
-<div class="relative z-10 container-xl py-10 flex flex-col md:flex-row items-center justify-between text-sm text-gray-400">
-<p>© {year} MLKFS LLC. All rights reserved.</p>
-<nav class="flex items-center gap-3 text-gray-500">
-<a class="hover:text-black" href="/privacy">Privacy</a>
-<span aria-hidden="true" class="opacity-40">•</span>
-<a class="hover:text-black" href="/terms">Terms</a>
-</nav>
-</div>
+  <div class="relative z-10 container-xl py-10 flex flex-col md:flex-row items-center justify-between text-sm text-gray-400">
+    <p>© {year} MLKFS LLC. All rights reserved.</p>
+    <nav class="flex items-center gap-3 text-gray-500">
+      <a class="hover:text-black" href="/privacy">Privacy</a>
+      <span aria-hidden="true" class="opacity-40">•</span>
+      <a class="hover:text-black" href="/terms">Terms</a>
+    </nav>
+  </div>
 </footer>
