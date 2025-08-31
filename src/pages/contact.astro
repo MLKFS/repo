@@ -13,7 +13,6 @@ const description = "Get in touch with MLKFS: office line, email, and a quick co
         <p class="mt-3 text-base text-gray-600">We’d love to hear from you.</p>
       </div>
 
-      <!-- Contact cards -->
       <div class="mt-10 grid grid-cols-1 md:grid-cols-3 gap-4">
         <div class="rounded-2xl border border-black/10 bg-white p-5">
           <h2 class="text-sm font-semibold text-black/70">MLKFS Office</h2>
@@ -21,7 +20,7 @@ const description = "Get in touch with MLKFS: office line, email, and a quick co
         </div>
         <div class="rounded-2xl border border-black/10 bg-white p-5">
           <h2 class="text-sm font-semibold text-black/70">Office line (virtual secretary)</h2>
-          <p class="mt-2 text-base"><a class="underline" href="tel:+19165465307">+1 (916) 546‑5307</a></p>
+          <p class="mt-2 text-base"><a class="underline" href="tel:+19165465307">+1 (916) 546-5307</a></p>
         </div>
         <div class="rounded-2xl border border-black/10 bg-white p-5">
           <h2 class="text-sm font-semibold text-black/70">Email</h2>
@@ -29,12 +28,10 @@ const description = "Get in touch with MLKFS: office line, email, and a quick co
         </div>
       </div>
 
-      <!-- Quick contact form (static-friendly; replace action with your endpoint) -->
       <div class="mt-12 rounded-2xl border border-black/10 bg-white p-6">
         <h2 class="text-lg font-semibold text-black">Send a message</h2>
         <p class="mt-1 text-sm text-gray-500">We usually reply within one business day.</p>
         <form class="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4" method="POST" action="https://formspree.io/f/xanbpgvb">
-          <!-- Honeypot -->
           <input type="text" name="_gotcha" class="hidden" tabindex="-1" autocomplete="off" />
 
           <div>
@@ -78,8 +75,7 @@ const description = "Get in touch with MLKFS: office line, email, and a quick co
             </button>
           </div>
           <input type="hidden" name="_subject" value="New inquiry from mlkfs.com" />
-       <input type="hidden" name="_redirect" value="http://localhost:4321/thanks" />
-
+          <input type="hidden" name="_redirect" value="http://localhost:4321/thanks" />
         </form>
       </div>
     </div>
