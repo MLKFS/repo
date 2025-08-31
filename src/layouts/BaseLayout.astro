@@ -18,18 +18,15 @@ const {
     <link rel="icon" href="/favicon.ico" />
   </head>
 
-  <!-- Full-height flex layout so the footer sticks to the bottom on short pages -->
   <body class="min-h-screen flex flex-col bg-white">
     <header>
       <Navbar />
     </header>
 
-    <!-- Grow to push footer down -->
     <main class="flex-grow pt-16">
       <slot />
     </main>
 
-    <!-- Footer will sit at the bottom thanks to mt-auto on the flex layout -->
     <footer class="mt-auto">
       <Footer />
     </footer>
