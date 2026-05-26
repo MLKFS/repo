@@ -1,0 +1,50 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+
+const title = "Software - MLKFS";
+const description = "Open-source software and tools published by MLKFS.";
+---
+
+<BaseLayout {title} {description}>
+  <section class="container-xl pt-24 pb-12">
+    <div class="mx-auto max-w-3xl text-center">
+      <p class="text-sm font-medium uppercase tracking-[0.18em] text-gray-500">Open source</p>
+      <h1 class="mt-3 text-4xl md:text-5xl font-bold leading-tight text-black">
+        Software by MLKFS
+      </h1>
+      <p class="mt-5 text-base md:text-lg text-gray-600 leading-relaxed">
+        Small, practical tools published in the open: built for real workflows,
+        versioned on GitHub, and documented for people who want to inspect,
+        install, or contribute.
+      </p>
+    </div>
+  </section>
+
+  <section class="container-xl pb-20">
+    <div class="mx-auto max-w-3xl border border-black/10 bg-gray-50">
+      <div class="p-6 md:p-8">
+        <div class="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
+          <div>
+            <p class="text-sm font-medium uppercase tracking-[0.16em] text-gray-500">macOS CLI</p>
+            <h2 class="mt-2 text-2xl font-semibold text-black">batt-sail</h2>
+            <p class="mt-3 text-sm md:text-base text-gray-600 leading-relaxed">
+              Battery charge limit manager for macOS with sailing mode,
+              hysteresis bands, scheduler metadata, and LaunchDaemon support.
+            </p>
+          </div>
+          <div class="flex shrink-0 flex-wrap gap-3">
+            <a
+              href="https://github.com/MLKFS/repo/tree/main/apps/batt-sail"
+              class="inline-flex items-center justify-center border border-black px-5 py-2 text-sm font-medium hover:bg-black hover:text-white transition"
+            >
+              GitHub
+            </a>
+          </div>
+        </div>
+        <div class="mt-6 overflow-x-auto bg-black px-4 py-3 text-left">
+          <code class="text-sm text-white">brew install batt-sail</code>
+        </div>
+      </div>
+    </div>
+  </section>
+</BaseLayout>
