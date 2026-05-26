@@ -27,6 +27,16 @@ need git
 need swift
 need sudo
 
+SWIFT_VERSION="$(swift --version | sed -n 's/.*Swift version \([0-9][0-9.]*\).*/\1/p' | head -n 1)"
+case "$SWIFT_VERSION" in
+  5.[7-9]*|6.*) ;;
+  *)
+    echo "Swift 5.7 or newer is required. Found: ${SWIFT_VERSION:-unknown}" >&2
+    echo "Update Xcode Command Line Tools, then try again." >&2
+    exit 1
+    ;;
+esac
+
 if ! xcode-select -p >/dev/null 2>&1; then
   echo "Xcode Command Line Tools are required. Run: xcode-select --install" >&2
   exit 1
