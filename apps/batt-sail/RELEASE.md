@@ -10,31 +10,25 @@ Binary output: `dist/batt-sail`
 
 ## GitHub Release
 
-1. Create a GitHub repo named `batt-sail`.
-2. Push source:
+1. Push source:
    ```bash
-   git remote add origin git@github.com:<username>/batt-sail.git
    git push -u origin main
    ```
-3. Tag and release:
+2. Tag and release:
    ```bash
    git tag v0.1.0
    git push origin v0.1.0
    ```
-4. Upload `dist/batt-sail` as a release asset.
+3. Upload `dist/batt-sail` as a release asset.
 
 ## Homebrew Tap
 
-1. Create repo `homebrew-batt-sail`.
-2. Copy `Formula/batt-sail.rb` into that repo.
-3. Replace `url` and `sha256` with your release tarball details.
-4. Publish tap repo.
+`Formula/batt-sail.rb` is a HEAD formula for the app inside the MLKFS repo. If you publish a stable release formula, replace `head` with a real release tarball URL and SHA-256.
 
 ## End-user install
 
 ```bash
-brew tap <username>/batt-sail
-brew install batt-sail
+brew install --HEAD ./Formula/batt-sail.rb
 ```
 
 ## Typical runtime setup
@@ -42,6 +36,10 @@ brew install batt-sail
 ```bash
 sudo batt-sail preset desktop
 sudo batt-sail daemon install
-sudo batt-sail daemon start
 batt-sail status
+sudo launchctl print system/com.mlkfs.batt-sail
 ```
+
+The LaunchDaemon is bootstrapped automatically by `daemon install`;
+explicit `daemon start` is not required. Use
+`sudo batt-sail daemon uninstall` to bootout and remove the plist.

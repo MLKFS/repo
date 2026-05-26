@@ -45,9 +45,3 @@ sudo install -m 0755 "$BIN_PATH" "$INSTALL_PATH"
 
 echo "Installed:"
 "$INSTALL_PATH" --help | sed -n '1,8p'
-
-if [ ! -x /usr/local/bin/smc ]; then
-  echo ""
-  echo "Note: /usr/local/bin/smc was not found."
-  echo "batt-sail installs successfully, but battery limit commands need an SMC utility."
-fi
