@@ -24,10 +24,35 @@ if [ "$(uname -s)" != "Darwin" ]; then
 fi
 
 need git
-need swift
+need xcrun
 need sudo
 
-SWIFT_VERSION="$(swift --version | sed -n 's/.*Swift version \([0-9][0-9.]*\).*/\1/p' | head -n 1)"
+if ! xcode-select -p >/dev/null 2>&1; then
+  echo "Xcode Command Line Tools are required. Run: xcode-select --install" >&2
+  exit 1
+fi
+
+unset SDKROOT
+unset TOOLCHAINS
+
+SWIFT_BIN="$(xcrun --find swift 2>/dev/null || true)"
+if [ -z "$SWIFT_BIN" ] || [ ! -x "$SWIFT_BIN" ]; then
+  echo "Swift was not found through xcrun." >&2
+  echo "Run: xcode-select --install" >&2
+  exit 1
+fi
+
+MANIFEST_API_DIR="$(dirname "$SWIFT_BIN")/../lib/swift/pm/ManifestAPI"
+if [ ! -d "$MANIFEST_API_DIR" ]; then
+  echo "Swift Package Manager support is missing from the active developer tools." >&2
+  echo "Active tools: $(xcode-select -p)" >&2
+  echo "Swift: $SWIFT_BIN" >&2
+  echo "Run: sudo xcode-select --switch /Library/Developer/CommandLineTools" >&2
+  echo "If that path does not exist, run: xcode-select --install" >&2
+  exit 1
+fi
+
+SWIFT_VERSION="$("$SWIFT_BIN" --version | sed -n 's/.*Swift version \([0-9][0-9.]*\).*/\1/p' | head -n 1)"
 case "$SWIFT_VERSION" in
   5.[7-9]*|6.*) ;;
   *)
@@ -37,18 +62,13 @@ case "$SWIFT_VERSION" in
     ;;
 esac
 
-if ! xcode-select -p >/dev/null 2>&1; then
-  echo "Xcode Command Line Tools are required. Run: xcode-select --install" >&2
-  exit 1
-fi
-
 echo "Fetching batt-sail..."
 git clone --filter=blob:none --sparse --depth=1 "$REPO_URL" "$WORK_DIR/repo"
 git -C "$WORK_DIR/repo" sparse-checkout set "$APP_PATH"
 
 echo "Building batt-sail..."
 cd "$WORK_DIR/repo/$APP_PATH"
-swift build -c release
+"$SWIFT_BIN" build -c release
 
 echo "Installing to $INSTALL_PATH..."
 sudo install -m 0755 .build/release/batt-sail "$INSTALL_PATH"
