@@ -18,6 +18,10 @@ This repository hosts the public MLKFS website and open-source applications.
 
 - `src/` - Astro website served at [mlkfs.com](https://mlkfs.com)
 - `apps/batt-sail/` - macOS battery sailing CLI
+- `.github/workflows/deploy.yml` - GitHub Pages deployment workflow
+
+Application code should live under `apps/<name>/`. The website should link to
+those app folders instead of mixing product code into the site source tree.
 
 ## Rollback point
 
