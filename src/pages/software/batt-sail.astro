@@ -25,7 +25,7 @@ const description = "Install batt-sail, the macOS battery sailing CLI by MLKFS."
           <div>
             <h2 class="text-2xl font-semibold text-black">Install from source</h2>
             <p class="mt-2 text-sm md:text-base text-gray-600">
-              Use this path until signed release downloads are published.
+              This checks out only the app folder, not the website.
             </p>
           </div>
           <a
@@ -37,10 +37,13 @@ const description = "Install batt-sail, the macOS battery sailing CLI by MLKFS."
         </div>
 
         <div class="mt-6 overflow-x-auto bg-black px-4 py-3 text-left">
-          <code class="text-sm text-white">git clone https://github.com/MLKFS/repo.git</code>
+          <code class="text-sm text-white">git clone --filter=blob:none --sparse https://github.com/MLKFS/repo.git mlkfs-batt-sail</code>
         </div>
         <div class="mt-3 overflow-x-auto bg-black px-4 py-3 text-left">
-          <code class="text-sm text-white">cd repo/apps/batt-sail && make universal</code>
+          <code class="text-sm text-white">cd mlkfs-batt-sail && git sparse-checkout set apps/batt-sail</code>
+        </div>
+        <div class="mt-3 overflow-x-auto bg-black px-4 py-3 text-left">
+          <code class="text-sm text-white">cd apps/batt-sail && make universal</code>
         </div>
         <div class="mt-3 overflow-x-auto bg-black px-4 py-3 text-left">
           <code class="text-sm text-white">sudo install -m 0755 dist/batt-sail /usr/local/bin/batt-sail</code>

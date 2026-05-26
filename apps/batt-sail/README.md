@@ -5,8 +5,10 @@ macOS battery charge limit CLI with presets, sailing mode, scheduling, and Launc
 ## Install from source
 
 ```bash
-git clone https://github.com/MLKFS/repo.git
-cd repo/apps/batt-sail
+git clone --filter=blob:none --sparse https://github.com/MLKFS/repo.git mlkfs-batt-sail
+cd mlkfs-batt-sail
+git sparse-checkout set apps/batt-sail
+cd apps/batt-sail
 make universal
 sudo install -m 0755 dist/batt-sail /usr/local/bin/batt-sail
 ```
