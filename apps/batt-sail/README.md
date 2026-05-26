@@ -1,6 +1,22 @@
 # batt-sail
 
-Production-focused macOS battery sailing CLI with hysteresis, scheduler metadata, and LaunchDaemon management.
+macOS battery charge limit CLI with presets, sailing mode, scheduling, and LaunchDaemon support.
+
+## Install from source
+
+```bash
+git clone https://github.com/MLKFS/repo.git
+cd repo/apps/batt-sail
+make universal
+sudo install -m 0755 dist/batt-sail /usr/local/bin/batt-sail
+```
+
+Then start with one preset:
+
+```bash
+sudo batt-sail preset cycle
+batt-sail status
+```
 
 ## STEP 1: Core Architecture & Hardware Bridge
 
