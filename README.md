@@ -11,3 +11,21 @@ Our scope covers:
 Our work blends technical precision with creative vision: cutting, grading, mixing, and mastering so that stories resonate across formats and platforms. Whether a short film, a YouTube channel, or a musical release, we believe editing, color, and sound are universal languages.  
 
 🌐 [mlkfs.com](https://mlkfs.com) • MLKFS LLC • All rights reserved
+
+## Repository layout
+
+This repository hosts the public MLKFS website and open-source applications.
+
+- `src/` - Astro website served at [mlkfs.com](https://mlkfs.com)
+- `apps/batt-sail/` - macOS battery sailing CLI
+
+## Rollback point
+
+Before adding application code, the live website state was preserved on:
+
+```bash
+backup/site-before-apps-migration-2026-05-26
+```
+
+If a deployment ever needs to be rolled back, restore `main` to that branch from
+GitHub or with a protected fast recovery flow.
