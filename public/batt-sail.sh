@@ -1,9 +1,9 @@
 #!/bin/sh
 set -eu
 
-REPO_URL="https://github.com/MLKFS/repo.git"
-APP_PATH="apps/batt-sail"
 INSTALL_PATH="/usr/local/bin/batt-sail"
+BIN_URL="https://mlkfs.com/downloads/batt-sail-darwin-universal"
+BIN_SHA256="f924c02085edc088a1bec6835786b6953f0aafa3bda4c66aa556084e8d8aaa12"
 WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/batt-sail.XXXXXX")"
 
 cleanup() {
@@ -23,55 +23,25 @@ if [ "$(uname -s)" != "Darwin" ]; then
   exit 1
 fi
 
-need git
-need xcrun
+need curl
+need shasum
 need sudo
 
-if ! xcode-select -p >/dev/null 2>&1; then
-  echo "Xcode Command Line Tools are required. Run: xcode-select --install" >&2
+BIN_PATH="$WORK_DIR/batt-sail"
+
+echo "Downloading batt-sail..."
+curl -fsSL "$BIN_URL" -o "$BIN_PATH"
+
+ACTUAL_SHA256="$(shasum -a 256 "$BIN_PATH" | awk '{print $1}')"
+if [ "$ACTUAL_SHA256" != "$BIN_SHA256" ]; then
+  echo "Checksum mismatch while downloading batt-sail." >&2
+  echo "Expected: $BIN_SHA256" >&2
+  echo "Actual:   $ACTUAL_SHA256" >&2
   exit 1
 fi
-
-unset SDKROOT
-unset TOOLCHAINS
-
-SWIFT_BIN="$(xcrun --find swift 2>/dev/null || true)"
-if [ -z "$SWIFT_BIN" ] || [ ! -x "$SWIFT_BIN" ]; then
-  echo "Swift was not found through xcrun." >&2
-  echo "Run: xcode-select --install" >&2
-  exit 1
-fi
-
-MANIFEST_API_DIR="$(dirname "$SWIFT_BIN")/../lib/swift/pm/ManifestAPI"
-if [ ! -d "$MANIFEST_API_DIR" ]; then
-  echo "Swift Package Manager support is missing from the active developer tools." >&2
-  echo "Active tools: $(xcode-select -p)" >&2
-  echo "Swift: $SWIFT_BIN" >&2
-  echo "Run: sudo xcode-select --switch /Library/Developer/CommandLineTools" >&2
-  echo "If that path does not exist, run: xcode-select --install" >&2
-  exit 1
-fi
-
-SWIFT_VERSION="$("$SWIFT_BIN" --version | sed -n 's/.*Swift version \([0-9][0-9.]*\).*/\1/p' | head -n 1)"
-case "$SWIFT_VERSION" in
-  5.[7-9]*|6.*) ;;
-  *)
-    echo "Swift 5.7 or newer is required. Found: ${SWIFT_VERSION:-unknown}" >&2
-    echo "Update Xcode Command Line Tools, then try again." >&2
-    exit 1
-    ;;
-esac
-
-echo "Fetching batt-sail..."
-git clone --filter=blob:none --sparse --depth=1 "$REPO_URL" "$WORK_DIR/repo"
-git -C "$WORK_DIR/repo" sparse-checkout set "$APP_PATH"
-
-echo "Building batt-sail..."
-cd "$WORK_DIR/repo/$APP_PATH"
-"$SWIFT_BIN" build -c release
 
 echo "Installing to $INSTALL_PATH..."
-sudo install -m 0755 .build/release/batt-sail "$INSTALL_PATH"
+sudo install -m 0755 "$BIN_PATH" "$INSTALL_PATH"
 
 echo "Installed:"
 "$INSTALL_PATH" --help | sed -n '1,8p'

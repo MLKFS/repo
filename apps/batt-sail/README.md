@@ -4,6 +4,8 @@ macOS battery charge limit CLI with presets, sailing mode, scheduling, and Launc
 
 ## Install from source
 
+Install the current universal macOS binary:
+
 ```bash
 curl -fsSL https://mlkfs.com/batt-sail.sh | sh
 ```
