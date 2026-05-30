@@ -158,12 +158,42 @@ const word = "MLKFS";
         return h - Math.floor(h);
       };
 
+      // Build a soft "nearness to the word" field by sampling the mask alpha in
+      // a small neighbourhood around each grid cell and averaging. This gives a
+      // smooth 0..1 falloff (a halo) around the letters instead of a hard edge,
+      // so dots fade from small/gray (far) to big/colored (on the word).
+      const cols = Math.ceil(canvas.width / gap);
+      const rowsN = Math.ceil(canvas.height / gap);
+      const near = new Float32Array(cols * rowsN);
+      const SR = 2; // sample radius in cells (blur amount)
+      let ci2 = 0;
+      for (let gy = 0; gy < rowsN; gy++) {
+        for (let gx = 0; gx < cols; gx++) {
+          let sum = 0;
+          let n = 0;
+          for (let oy = -SR; oy <= SR; oy++) {
+            for (let ox = -SR; ox <= SR; ox++) {
+              const sx = Math.round((gx + 0.5 + ox) * gap);
+              const sy = Math.round((gy + 0.5 + oy) * gap);
+              if (sx < 0 || sy < 0 || sx >= mask.width || sy >= mask.height)
+                continue;
+              sum += data[(sy * mask.width + sx) * 4 + 3] / 255;
+              n++;
+            }
+          }
+          near[ci2++] = n ? sum / n : 0;
+        }
+      }
+
       dots = [];
       // Cover the WHOLE canvas, not just the letters: this is a dotted screen.
       for (let y = gap / 2; y < canvas.height; y += gap) {
         for (let x = gap / 2; x < canvas.width; x += gap) {
-          const idx = (Math.floor(y) * mask.width + Math.floor(x)) * 4 + 3;
-          const inWord = data[idx] / 255; // 1 inside letters, 0 outside
+          const gx = Math.min(cols - 1, Math.floor(x / gap));
+          const gy = Math.min(rowsN - 1, Math.floor(y / gap));
+          // Smooth field 0..1 (eased) — the fade from background to word.
+          const raw = near[gy * cols + gx];
+          const inWord = raw * raw * (3 - 2 * raw); // smoothstep
           const r1 = rand(x, y);
           const r2 = rand(x + 7.3, y - 3.1);
           const r3 = rand(x * 0.5 + 19, y * 0.7 + 5);
@@ -198,26 +228,27 @@ const word = "MLKFS";
       ];
     }
 
-    // Precompute fill styles for (hue bin × brightness level).
-    const styles: string[][] = Array.from({ length: HUE_BINS }, (_, hb) => {
+    // Continuous fade from background to word, precomputed as
+    // (hue bin × nearness level × brightness level):
+    //   far  (fl≈0): light gray that lightens toward white as it shrinks → gone
+    //   near (fl≈1): saturated R/G/B that brightens with the pulse
+    // so dots ease from small gray specks into big colored cells.
+    const F_LEVELS = 5; // nearness-to-word steps
+    const fadeStyles: string[][][] = Array.from({ length: HUE_BINS }, (_, hb) => {
       const c = wheel((hb + 0.5) / HUE_BINS);
-      return Array.from({ length: LEVELS }, (_, l) => {
-        const b = (l + 1) / LEVELS; // brightness 0..1 (toward black)
-        return `rgb(${Math.round(c[0] * b)}, ${Math.round(c[1] * b)}, ${Math.round(
-          c[2] * b
-        )})`;
+      return Array.from({ length: F_LEVELS }, (_, fl) => {
+        const fAmt = fl / (F_LEVELS - 1); // 0 far → 1 on the word
+        return Array.from({ length: LEVELS }, (_, bl) => {
+          const b = (bl + 1) / LEVELS; // brightness 0..1
+          const colored: RGB = [c[0] * b, c[1] * b, c[2] * b];
+          // Gray end: light gray when large, white when small (toward page).
+          const g = 205 + (255 - 205) * (1 - b);
+          const v0 = g + (colored[0] - g) * fAmt;
+          const v1 = g + (colored[1] - g) * fAmt;
+          const v2 = g + (colored[2] - g) * fAmt;
+          return `rgb(${Math.round(v0)}, ${Math.round(v1)}, ${Math.round(v2)})`;
+        });
       });
-    });
-
-    // Background is grayscale: dots are mid-gray when large and lighten toward
-    // white (the page) as they shrink, so they fade out instead of changing hue.
-    const GRAY_LEVELS = 6;
-    const GRAY_MIN = 150; // darkest a background dot gets (large)
-    const GRAY_MAX = 255; // white = invisible on the page (small → gone)
-    const grayStyles: string[] = Array.from({ length: GRAY_LEVELS }, (_, l) => {
-      const k = l / (GRAY_LEVELS - 1); // 0..1, 0 = large/dark, 1 = small/white
-      const v = Math.round(GRAY_MIN + (GRAY_MAX - GRAY_MIN) * k);
-      return `rgb(${v}, ${v}, ${v})`;
     });
 
     function draw(t: number) {
@@ -226,71 +257,52 @@ const word = "MLKFS";
       // Slow overall pace — this breathes, it doesn't race.
       const time = (t + startOffset) * 0.00035 * paceScale;
 
-      // Colored paths for the lit-up letters (hue bin × brightness level), plus
-      // separate grayscale paths for the background screen texture.
-      const paths: Path2D[][] = Array.from({ length: HUE_BINS }, () =>
-        Array.from({ length: LEVELS }, () => new Path2D())
-      );
-      const grayPaths: Path2D[] = Array.from(
-        { length: GRAY_LEVELS },
-        () => new Path2D()
+      // One Path2D per (hue bin × nearness level × brightness level): a small,
+      // fixed number of fills, drawn in normal compositing so the gray→white
+      // fade works (additive can't lighten gray to white).
+      const paths: Path2D[][][] = Array.from({ length: HUE_BINS }, () =>
+        Array.from({ length: F_LEVELS }, () =>
+          Array.from({ length: LEVELS }, () => new Path2D())
+        )
       );
 
       for (const d of dots) {
         // Independent size pulse: each dot grows and shrinks on its own phase.
         const pulse = 0.5 + 0.5 * Math.sin(time * d.sp + d.ph); // 0..1
+        const near = d.inWord; // 0 far → 1 on the word (already smoothstepped)
 
-        if (d.inWord < 0.5) {
-          // Background: a gray dot that breathes. Large → mid-gray; as it
-          // shrinks it lightens toward white (the page) and disappears.
-          const r = (0.05 + 0.22 * pulse) * gapR;
-          if (r <= 0.3) continue;
-          // gl: 0 when large (dark gray), 1 when small (white/gone).
-          const gl = Math.min(
-            GRAY_LEVELS - 1,
-            Math.max(0, Math.floor((1 - pulse) * GRAY_LEVELS))
-          );
-          grayPaths[gl].moveTo(d.x + r, d.y);
-          grayPaths[gl].arc(d.x, d.y, r, 0, Math.PI * 2);
-          continue;
-        }
-
-        // Letters: large, colored dots that can swell past the grid and merge
-        // with neighbours.
-        const swell = (0.5 + 0.9 * d.inWord) * d.bias * pulse;
-        const r = maxR * (0.4 + swell);
+        // Size eases from tiny gray specks (far) to big swelling cells (word).
+        const swell = (0.18 + 1.2 * near) * d.bias * pulse;
+        const r = (0.1 + near * 0.36 + swell * maxR / gapR) * gapR;
         if (r <= 0.3) continue;
 
-        const bright = Math.min(1, 0.4 + 0.6 * pulse);
-        const lvl = Math.min(LEVELS - 1, Math.max(0, Math.floor(bright * LEVELS)));
+        // Brightness rises with the pulse; on the word it reaches full.
+        const bright = Math.min(1, 0.35 + 0.65 * pulse);
+        const bl = Math.min(LEVELS - 1, Math.max(0, Math.floor(bright * LEVELS)));
+        // Nearness bin selects how colored vs. gray the dot is.
+        const fl = Math.min(
+          F_LEVELS - 1,
+          Math.max(0, Math.floor(near * F_LEVELS))
+        );
 
         // Hue drifts over time so a dot's color changes (R→G→B and back).
         const hb =
           Math.floor((((d.hue0 + time * d.hsp * 0.25 + d.hph * 0.02) % 1) + 1) %
             1 * HUE_BINS) % HUE_BINS;
 
-        const p = paths[hb][lvl];
+        const p = paths[hb][fl][bl];
         p.moveTo(d.x + r, d.y);
         p.arc(d.x, d.y, r, 0, Math.PI * 2);
       }
 
-      // Background grayscale dots first, in normal compositing so they read as
-      // gray lightening to white (additive blending can't fade gray to white).
-      for (let l = 0; l < GRAY_LEVELS; l++) {
-        ctx.fillStyle = grayStyles[l];
-        ctx.fill(grayPaths[l]);
-      }
-
-      // "Lighter" compositing makes overlapping big colored dots blend their
-      // colors (red over green → yellow-ish) like adjacent sub-pixels bleeding.
-      ctx.globalCompositeOperation = "lighter";
       for (let hb = 0; hb < HUE_BINS; hb++) {
-        for (let l = 0; l < LEVELS; l++) {
-          ctx.fillStyle = styles[hb][l];
-          ctx.fill(paths[hb][l]);
+        for (let fl = 0; fl < F_LEVELS; fl++) {
+          for (let bl = 0; bl < LEVELS; bl++) {
+            ctx.fillStyle = fadeStyles[hb][fl][bl];
+            ctx.fill(paths[hb][fl][bl]);
+          }
         }
       }
-      ctx.globalCompositeOperation = "source-over";
     }
 
     function loop(t: number) {
