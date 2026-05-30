@@ -76,26 +76,24 @@ const word = "MLKFS";
     const wave = reduceMotion ? 0.14 : 0.30; // smooth rippling component
     const flick = reduceMotion ? 0.10 : 0.40; // random twinkle component
     const moveScale = reduceMotion ? 0.5 : 1; // gentler drift in low-power mode
-    const hueSpeed = reduceMotion ? 8 : 20; // how fast the rainbow flows (°/s)
 
-    // Full-spectrum rainbow: dots take a hue from their position and the whole
-    // band drifts over time, so the word is made of every color (no black).
-    // We quantise hue + lightness into bins so a frame still issues a small,
-    // fixed number of fills.
-    const HUE_BINS = 36; // 10° steps
-    const LEVELS = 5; // shimmer (lightness) steps
-    const SAT = 85; // %
-    const L_MIN = 40; // trough lightness %
-    const L_MAX = 74; // crest lightness %
+    // Pure RGB sub-pixels: only red, green, blue — fully saturated, with each
+    // dot's brightness swinging the full 0..100% so cells fade to black and back
+    // (like a screen's sub-pixels). From a distance the three colors blend.
+    const COLORS: RGB[] = [
+      [255, 0, 0], // R
+      [0, 255, 0], // G
+      [0, 0, 255], // B
+    ];
+    const LEVELS = 8; // brightness steps from 0% to 100%
 
     type Dot = {
       x: number;
       y: number;
       cov: number; // 0..1 coverage from the text mask
-      hue: number; // base hue 0..360 (position-based)
+      ci: number; // color index: 0=R, 1=G, 2=B
       seed: number; // per-dot random phase (0..1) for twinkle/flicker
       tw: number; // twinkle speed multiplier (matrix-like flicker)
-      hj: number; // per-dot hue jitter in degrees
     };
 
     let dots: Dot[] = [];
@@ -155,13 +153,6 @@ const word = "MLKFS";
           const idx = (Math.floor(y) * mask.width + Math.floor(x)) * 4 + 3;
           const cov = data[idx] / 255; // alpha = inside the letters
           if (cov < 0.04) continue;
-          // Hue from position: a smooth left→right spectrum across the word,
-          // with a touch of vertical shift and noise so it shimmers like a
-          // rainbow on silk rather than clean vertical bands.
-          const sweep = (x / canvas.width) * 300; // most of the wheel L→R
-          const tilt = (y / canvas.height) * 60;
-          const noise = Math.sin(x * 0.05 + y * 0.08) * 12;
-          const hue = (sweep + tilt + noise + 360) % 360;
           // Per-dot randomness, re-seeded every visit: position hashes are
           // mixed with this session's SEED so the same pixel looks different
           // each load. Two machines opening together still differ.
@@ -173,10 +164,9 @@ const word = "MLKFS";
             x,
             y,
             cov,
-            hue: (hue + SEED * 360) % 360, // whole spectrum is rotated per visit
+            ci: Math.floor(rnd * 3) % 3, // random R/G/B per dot (per visit)
             seed: rnd,
             tw: 0.6 + rnd2 * 2.2, // each dot flickers at its own rate
-            hj: (rnd2 - 0.5) * 50, // ±25° hue scatter
           });
         }
       }
@@ -187,11 +177,10 @@ const word = "MLKFS";
       // Offset the clock per visit so the loop starts at a random phase.
       const time = (t + startOffset) * 0.001;
       const sway = maxR * 0.9 * moveScale; // how far dots drift (px)
-      const hueShift = (time * hueSpeed) % 360; // rainbow flows over time
 
-      // One Path2D per (hue bin, lightness level) so the frame issues a small,
+      // One Path2D per (color, brightness level) so the frame issues a small,
       // fixed number of fills no matter how many dots there are.
-      const paths: Path2D[][] = Array.from({ length: HUE_BINS }, () =>
+      const paths: Path2D[][] = COLORS.map(() =>
         Array.from({ length: LEVELS }, () => new Path2D())
       );
 
@@ -211,45 +200,42 @@ const word = "MLKFS";
         const dy = sway * Math.cos(ny - time * 0.6);
 
         // Per-dot random flicker (matrix): each dot pulses on its own phase and
-        // rate, layered on the smooth silk wave. Mostly bright with occasional
-        // near-zero dips so cells blink in and out.
+        // rate, layered on the smooth silk wave.
         const flickW = Math.sin(time * d.tw + d.seed * 6.283);
-        const mul = 1 - wave * 0.5 + wave * 0.5 * field + flick * flickW;
-        const r = d.cov * maxR * Math.max(0, mul);
+
+        // Brightness swings the full 0..1 (i.e. 0..100%): the wave + flicker
+        // drive each dot from black up to fully bright and back.
+        const liteT = Math.min(
+          1,
+          Math.max(
+            0,
+            0.5 + wave * 0.5 * field + flick * 0.5 * flickW + 0.18
+          )
+        );
+
+        // Radius stays roughly constant; the look is carried by brightness, so
+        // dark dots still hold the letter shape instead of disappearing.
+        const r = d.cov * maxR;
         if (r <= 0.2) continue;
 
-        // Lightness follows the combined motion so bright dots also pop in tone.
-        const liteT = (field * 0.5 + 0.5) * 0.5 + (flickW * 0.5 + 0.5) * 0.5;
-        const lvl = Math.min(
-          LEVELS - 1,
-          Math.max(0, Math.floor(liteT * LEVELS))
-        );
-        // Pull the hue toward the three screen primaries (R 0°, G 120°, B 240°)
-        // so the wordmark reads as RGB — fitting for work made for screens —
-        // while still passing through yellow/cyan/magenta in the transitions.
-        // d.hj scatters each dot's hue so colors don't form clean bands.
-        const u = ((((d.hue + d.hj + hueShift) % 360) + 360) % 360) / 360; // 0..1
-        const s = u * 3;
-        const seg = Math.floor(s);
-        const f = s - seg; // 0..1 within an R→G→B leg
-        const k = 2.4; // >1 widens the pure primaries, narrows the blends
-        const fp =
-          f < 0.5 ? 0.5 * Math.pow(2 * f, k) : 1 - 0.5 * Math.pow(2 - 2 * f, k);
-        const snapped = ((seg + fp) / 3) % 1; // back to 0..1
-        const hb = Math.floor(snapped * HUE_BINS) % HUE_BINS;
-        const p = paths[hb][lvl];
+        const lvl = Math.min(LEVELS - 1, Math.max(0, Math.floor(liteT * LEVELS)));
+        const p = paths[d.ci][lvl];
         const px = d.x + dx;
         const py = d.y + dy;
         p.moveTo(px + r, py);
         p.arc(px, py, r, 0, Math.PI * 2);
       }
 
-      for (let hb = 0; hb < HUE_BINS; hb++) {
-        const hue = (hb + 0.5) * (360 / HUE_BINS);
+      for (let ci = 0; ci < COLORS.length; ci++) {
+        const c = COLORS[ci];
         for (let l = 0; l < LEVELS; l++) {
-          const light = L_MIN + ((l + 0.5) / LEVELS) * (L_MAX - L_MIN);
-          ctx.fillStyle = `hsl(${hue.toFixed(0)}, ${SAT}%, ${light.toFixed(0)}%)`;
-          ctx.fill(paths[hb][l]);
+          // Scale the pure color toward black: level 0 ≈ 0% brightness,
+          // top level = full 100% saturated R/G/B.
+          const b = (l + 1) / LEVELS;
+          ctx.fillStyle = `rgb(${Math.round(c[0] * b)}, ${Math.round(
+            c[1] * b
+          )}, ${Math.round(c[2] * b)})`;
+          ctx.fill(paths[ci][l]);
         }
       }
     }
