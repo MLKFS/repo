@@ -79,24 +79,27 @@ const word = "MLKFS";
     // on the live site (it would reveal the canvas's rectangular edges), so only
     // the colored letter dots show. Structural values (spacing/halo/width) stay
     // fixed, and phases are integrated, so nothing ever stutters.
-    const DEPTH = reduceMotion ? 0.32 : 0.5; // how far each variable swings
-    const ESPEED = reduceMotion ? 0.4 : 0.6; // how fast the drift cycles
-    // base = the established look; amp = breathing amplitude around it.
-    const PARAMS: Record<string, { base: number; amp: number }> = {
-      pace: { base: 0.35, amp: 0.16 },
-      pulseMin: { base: 0.25, amp: 0.15 },
-      pulseMax: { base: 1.15, amp: 0.5 },
-      hueSpeed: { base: 0.25, amp: 0.2 },
-      rMax: { base: 0.62, amp: 0.1 },
-      sizeBase: { base: 0.12, amp: 0.06 },
-      sizeNear: { base: 0.5, amp: 0.12 },
-      sizePulse: { base: 0.18, amp: 0.1 },
-      brightBase: { base: 0.35, amp: 0.12 },
-      brightPulse: { base: 0.65, amp: 0.18 },
-      sat: { base: 0.9, amp: 0.12 },
-      silkSpeed: { base: 2.2, amp: 0.9 },
-      silkFreqX: { base: 0.012, amp: 0.004 },
-      silkFreqY: { base: 0.016, amp: 0.005 },
+    // Wide, lively swing — at full depth the dots blow up and overlap into soft
+    // bokeh-like blobs, then resolve back into a crisp MLKFS, over and over.
+    const DEPTH = reduceMotion ? 0.4 : 1.0; // how far each variable swings
+    const ESPEED = reduceMotion ? 0.4 : 0.75; // how fast the drift cycles
+    // base = the established look; [min,max] = how far each variable may swing
+    // (clamped, so pace never freezes or reverses).
+    const PARAMS: Record<string, { base: number; min: number; max: number }> = {
+      pace: { base: 0.35, min: 0.1, max: 0.75 },
+      pulseMin: { base: 0.25, min: 0.05, max: 1.1 },
+      pulseMax: { base: 1.15, min: 0.6, max: 2.4 },
+      hueSpeed: { base: 0.25, min: 0, max: 1.2 },
+      rMax: { base: 0.62, min: 0.38, max: 1.1 },
+      sizeBase: { base: 0.12, min: 0, max: 0.4 },
+      sizeNear: { base: 0.5, min: 0.28, max: 0.9 },
+      sizePulse: { base: 0.18, min: 0.05, max: 0.55 },
+      brightBase: { base: 0.35, min: 0.15, max: 0.6 },
+      brightPulse: { base: 0.65, min: 0.35, max: 0.95 },
+      sat: { base: 0.9, min: 0.55, max: 1 },
+      silkSpeed: { base: 2.2, min: 0.9, max: 4 },
+      silkFreqX: { base: 0.012, min: 0.006, max: 0.022 },
+      silkFreqY: { base: 0.016, min: 0.008, max: 0.026 },
     };
     // Per-variable drift rate + phase, seeded so every visit evolves differently.
     const EVO: Record<string, { rate: number; phase: number }> = {};
@@ -116,9 +119,12 @@ const word = "MLKFS";
     function evolve(tsec: number) {
       for (const k in PARAMS) {
         const p = PARAMS[k];
-        EP[k] = p.base + Math.sin(tsec * EVO[k].rate + EVO[k].phase) * p.amp * DEPTH;
+        const swing = ((p.max - p.min) / 2) * DEPTH;
+        let v = p.base + Math.sin(tsec * EVO[k].rate + EVO[k].phase) * swing;
+        if (v < p.min) v = p.min;
+        else if (v > p.max) v = p.max;
+        EP[k] = v;
       }
-      if (EP.sat > 1) EP.sat = 1;
     }
     // Integrated accumulators — keep motion smooth even as speeds drift.
     let silkAcc = SEED * 50;

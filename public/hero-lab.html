@@ -175,7 +175,7 @@ document.getElementById("dev-mobile").addEventListener("click", ()=>setDevice("m
 
 // ---- Evolve mode: every variable drifts at its own (seedable) speed ----
 let SEED = Math.random();
-let evolveOn = false, evolveSpeed = 1, evolveDepth = 0.5, lastTsec = 0;
+let evolveOn = true, evolveSpeed = 1, evolveDepth = 1, lastTsec = 0;
 let silkAcc = 0, lastDrawT = 0;   // integrated phases keep motion smooth as speeds drift
 const evoSpeed = {};              // per-variable change-speed multiplier (0 = frozen)
 for (const k in DEFAULTS) evoSpeed[k] = 1;
@@ -214,11 +214,11 @@ const fmt = (v, step) => step >= 1 ? Math.round(v) : Math.round(v*100)/100;
   const g = document.createElement("div"); g.className = "group";
   g.innerHTML = `<h2>Evolve (auto-drift)</h2>
     <div class="row check"><label for="evo_on">Animate all variables</label>
-      <input id="evo_on" type="checkbox" style="width:18px;height:18px;accent-color:var(--accent)"></div>
+      <input id="evo_on" type="checkbox" checked style="width:18px;height:18px;accent-color:var(--accent)"></div>
     <div class="row"><label>Global speed ×</label><span class="val" id="v_evos">1</span>
       <input id="s_evos" type="range" min="0" max="4" step="0.05" value="1"></div>
-    <div class="row"><label>Depth (swing)</label><span class="val" id="v_evod">0.5</span>
-      <input id="s_evod" type="range" min="0" max="1" step="0.02" value="0.5"></div>
+    <div class="row"><label>Depth (swing)</label><span class="val" id="v_evod">1</span>
+      <input id="s_evod" type="range" min="0" max="1" step="0.02" value="1"></div>
     <p class="hint" style="margin:8px 0 0">Each variable drifts on its own seeded rhythm — “New random seed” gives a fresh combination.</p>`;
   panel.prepend(g);
   const on = g.querySelector("#evo_on");
