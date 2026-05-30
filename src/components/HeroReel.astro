@@ -209,37 +209,59 @@ const word = "MLKFS";
       });
     });
 
+    // Background is grayscale: dots are mid-gray when large and lighten toward
+    // white (the page) as they shrink, so they fade out instead of changing hue.
+    const GRAY_LEVELS = 6;
+    const GRAY_MIN = 150; // darkest a background dot gets (large)
+    const GRAY_MAX = 255; // white = invisible on the page (small → gone)
+    const grayStyles: string[] = Array.from({ length: GRAY_LEVELS }, (_, l) => {
+      const k = l / (GRAY_LEVELS - 1); // 0..1, 0 = large/dark, 1 = small/white
+      const v = Math.round(GRAY_MIN + (GRAY_MAX - GRAY_MIN) * k);
+      return `rgb(${v}, ${v}, ${v})`;
+    });
+
     function draw(t: number) {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       // Offset the clock per visit so the loop starts at a random phase.
       // Slow overall pace — this breathes, it doesn't race.
       const time = (t + startOffset) * 0.00035 * paceScale;
 
-      // One Path2D per (hue bin, brightness level): a small fixed number of fills.
+      // Colored paths for the lit-up letters (hue bin × brightness level), plus
+      // separate grayscale paths for the background screen texture.
       const paths: Path2D[][] = Array.from({ length: HUE_BINS }, () =>
         Array.from({ length: LEVELS }, () => new Path2D())
+      );
+      const grayPaths: Path2D[] = Array.from(
+        { length: GRAY_LEVELS },
+        () => new Path2D()
       );
 
       for (const d of dots) {
         // Independent size pulse: each dot grows and shrinks on its own phase.
         const pulse = 0.5 + 0.5 * Math.sin(time * d.sp + d.ph); // 0..1
 
-        // Inside the letters the dots are large and bright; the background is a
-        // faint, quietly shifting dotted screen so MLKFS clearly reads as the
-        // lit-up cells.
-        const isBg = d.inWord < 0.5;
-        // Radius: base + swell. Lit dots can swell past the grid spacing and
-        // merge with neighbours; background dots stay tiny.
+        if (d.inWord < 0.5) {
+          // Background: a gray dot that breathes. Large → mid-gray; as it
+          // shrinks it lightens toward white (the page) and disappears.
+          const r = (0.05 + 0.22 * pulse) * gapR;
+          if (r <= 0.3) continue;
+          // gl: 0 when large (dark gray), 1 when small (white/gone).
+          const gl = Math.min(
+            GRAY_LEVELS - 1,
+            Math.max(0, Math.floor((1 - pulse) * GRAY_LEVELS))
+          );
+          grayPaths[gl].moveTo(d.x + r, d.y);
+          grayPaths[gl].arc(d.x, d.y, r, 0, Math.PI * 2);
+          continue;
+        }
+
+        // Letters: large, colored dots that can swell past the grid and merge
+        // with neighbours.
         const swell = (0.5 + 0.9 * d.inWord) * d.bias * pulse;
-        let r = maxR * (0.4 + swell);
-        if (isBg) r = (0.14 + 0.12 * pulse) * gapR; // small, gently breathing
+        const r = maxR * (0.4 + swell);
         if (r <= 0.3) continue;
 
-        // Brightness: letters shimmer between mid and full; background stays
-        // very dim so it's only a texture, never competing with the word.
-        const bright = isBg
-          ? 0.1 + 0.06 * pulse
-          : Math.min(1, 0.4 + 0.6 * pulse);
+        const bright = Math.min(1, 0.4 + 0.6 * pulse);
         const lvl = Math.min(LEVELS - 1, Math.max(0, Math.floor(bright * LEVELS)));
 
         // Hue drifts over time so a dot's color changes (R→G→B and back).
@@ -252,8 +274,15 @@ const word = "MLKFS";
         p.arc(d.x, d.y, r, 0, Math.PI * 2);
       }
 
-      // "Lighter" compositing makes overlapping big dots blend their colors
-      // (red over green → yellow-ish) like real adjacent sub-pixels bleeding.
+      // Background grayscale dots first, in normal compositing so they read as
+      // gray lightening to white (additive blending can't fade gray to white).
+      for (let l = 0; l < GRAY_LEVELS; l++) {
+        ctx.fillStyle = grayStyles[l];
+        ctx.fill(grayPaths[l]);
+      }
+
+      // "Lighter" compositing makes overlapping big colored dots blend their
+      // colors (red over green → yellow-ish) like adjacent sub-pixels bleeding.
       ctx.globalCompositeOperation = "lighter";
       for (let hb = 0; hb < HUE_BINS; hb++) {
         for (let l = 0; l < LEVELS; l++) {
