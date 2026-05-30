@@ -70,36 +70,38 @@ const word = "MLKFS";
     const reduceMotion = window.matchMedia(
       "(prefers-reduced-motion: reduce)"
     ).matches;
-    // Blend of two feels: a smooth silk wave + a random per-dot flicker
-    // (digital matrix). `wave`/`flick` are how much each contributes to the
-    // size pulse; together they make some dots nearly vanish and pop back.
-    const wave = reduceMotion ? 0.14 : 0.30; // smooth rippling component
-    const flick = reduceMotion ? 0.10 : 0.40; // random twinkle component
-    const moveScale = reduceMotion ? 0.5 : 1; // gentler drift in low-power mode
+    // Overall animation pace; calmer under reduce-motion / Low Power Mode.
+    const paceScale = reduceMotion ? 0.5 : 1;
 
-    // Pure RGB sub-pixels: only red, green, blue — fully saturated, with each
-    // dot's brightness swinging the full 0..100% so cells fade to black and back
-    // (like a screen's sub-pixels). From a distance the three colors blend.
+    // Pure RGB sub-pixels: only red, green, blue — fully saturated. From a
+    // distance the three colors blend. Each dot's hue can drift between them.
     const COLORS: RGB[] = [
       [255, 0, 0], // R
       [0, 255, 0], // G
       [0, 0, 255], // B
     ];
-    const LEVELS = 8; // brightness steps from 0% to 100%
+    const HUE_BINS = 24; // quantised R→G→B→R wheel for cheap fills
+    const LEVELS = 7; // brightness steps from ~0% to 100%
 
+    // The whole hero is a screen made of dots (a full grid). MLKFS lights up the
+    // dots that fall inside the letters; dots outside stay as a dim background
+    // texture. Every dot has its own random phase/speed so it grows, shrinks and
+    // shifts color independently — maximum randomness, re-seeded each visit.
     type Dot = {
       x: number;
       y: number;
-      cov: number; // 0..1 coverage from the text mask
-      ci: number; // color index: 0=R, 1=G, 2=B
-      seed: number; // per-dot random phase (0..1) for twinkle/flicker
-      tw: number; // twinkle speed multiplier (matrix-like flicker)
-      cs: number; // matrix column fall speed
-      cp: number; // matrix column phase offset
+      inWord: number; // 0..1 coverage from the text mask (0 = background)
+      ph: number; // size pulse phase
+      sp: number; // size pulse speed
+      hph: number; // hue-drift phase
+      hsp: number; // hue-drift speed
+      hue0: number; // base hue (0..1 around the R/G/B wheel)
+      bias: number; // how much bigger this dot can swell
     };
 
     let dots: Dot[] = [];
     let maxR = 6;
+    let gapR = 8;
     let dpr = 1;
     let raf = 0;
     let visible = true;
@@ -145,118 +147,121 @@ const word = "MLKFS";
 
       const data = mctx.getImageData(0, 0, mask.width, mask.height).data;
 
-      // Dot grid spacing in device pixels (≈8 CSS px).
-      const gap = Math.max(6, Math.round(8 * dpr));
-      maxR = gap * 0.62;
+      // Dot grid spacing in device pixels (≈9 CSS px).
+      const gap = Math.max(6, Math.round(9 * dpr));
+      gapR = gap;
+      maxR = gap * 0.46; // base radius; dots can swell beyond this and merge
+
+      // Re-seeded hash → 0..1, different every visit.
+      const rand = (a: number, b: number) => {
+        const h = Math.sin(a * 127.1 + b * 311.7 + SEED * 6131.7) * 43758.5453;
+        return h - Math.floor(h);
+      };
 
       dots = [];
+      // Cover the WHOLE canvas, not just the letters: this is a dotted screen.
       for (let y = gap / 2; y < canvas.height; y += gap) {
         for (let x = gap / 2; x < canvas.width; x += gap) {
           const idx = (Math.floor(y) * mask.width + Math.floor(x)) * 4 + 3;
-          const cov = data[idx] / 255; // alpha = inside the letters
-          if (cov < 0.04) continue;
-          // Per-dot randomness, re-seeded every visit: position hashes are
-          // mixed with this session's SEED so the same pixel looks different
-          // each load. Two machines opening together still differ.
-          const h = Math.sin((x * 127.1 + y * 311.7) + SEED * 6131.7) * 43758.5453;
-          const rnd = h - Math.floor(h); // 0..1
-          const h2 = Math.sin((x * 269.5 + y * 183.3) + SEED * 9277.3) * 24634.6345;
-          const rnd2 = h2 - Math.floor(h2); // 0..1
-          // Column hash (x only): dots in the same column share a fall stream,
-          // re-seeded per visit, so brightness rains straight down like a
-          // terminal of fast-scrolling code.
-          const hc = Math.sin(x * 73.13 + SEED * 4177.1) * 19349.1;
-          const colR = hc - Math.floor(hc); // 0..1
+          const inWord = data[idx] / 255; // 1 inside letters, 0 outside
+          const r1 = rand(x, y);
+          const r2 = rand(x + 7.3, y - 3.1);
+          const r3 = rand(x * 0.5 + 19, y * 0.7 + 5);
+          const r4 = rand(x - 11, y + 23);
           dots.push({
             x,
             y,
-            cov,
-            ci: Math.floor(rnd * 3) % 3, // random R/G/B per dot (per visit)
-            seed: rnd,
-            tw: 0.6 + rnd2 * 2.2, // each dot flickers at its own rate
-            cs: 0.5 + colR * 0.9, // fall speed (screens of canvas height / s)
-            cp: colR, // column phase offset (0..1)
+            inWord,
+            ph: r1 * 6.283, // random start phase
+            sp: 0.25 + r2 * 0.9, // slow, varied pulse speed
+            hph: r3 * 6.283,
+            hsp: 0.15 + r4 * 0.6, // slow hue drift
+            hue0: r1, // base color anywhere on the R/G/B wheel
+            bias: 0.6 + r2 * 1.1, // some dots swell much larger than others
           });
         }
       }
     }
 
+    // R→G→B→R wheel: position 0..1 maps to a smoothly blending pure-ish color.
+    function wheel(h: number): RGB {
+      const s = ((h % 1) + 1) % 1;
+      const seg = s * 3;
+      const i = Math.floor(seg);
+      const f = seg - i;
+      const a = COLORS[i % 3];
+      const b = COLORS[(i + 1) % 3];
+      return [
+        a[0] + (b[0] - a[0]) * f,
+        a[1] + (b[1] - a[1]) * f,
+        a[2] + (b[2] - a[2]) * f,
+      ];
+    }
+
+    // Precompute fill styles for (hue bin × brightness level).
+    const styles: string[][] = Array.from({ length: HUE_BINS }, (_, hb) => {
+      const c = wheel((hb + 0.5) / HUE_BINS);
+      return Array.from({ length: LEVELS }, (_, l) => {
+        const b = (l + 1) / LEVELS; // brightness 0..1 (toward black)
+        return `rgb(${Math.round(c[0] * b)}, ${Math.round(c[1] * b)}, ${Math.round(
+          c[2] * b
+        )})`;
+      });
+    });
+
     function draw(t: number) {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       // Offset the clock per visit so the loop starts at a random phase.
-      const time = (t + startOffset) * 0.001;
-      const sway = maxR * 0.9 * moveScale; // how far dots drift (px)
+      // Slow overall pace — this breathes, it doesn't race.
+      const time = (t + startOffset) * 0.00035 * paceScale;
 
-      // One Path2D per (color, brightness level) so the frame issues a small,
-      // fixed number of fills no matter how many dots there are.
-      const paths: Path2D[][] = COLORS.map(() =>
+      // One Path2D per (hue bin, brightness level): a small fixed number of fills.
+      const paths: Path2D[][] = Array.from({ length: HUE_BINS }, () =>
         Array.from({ length: LEVELS }, () => new Path2D())
       );
 
       for (const d of dots) {
-        // Two crossing low-frequency waves at incommensurate speeds read as a
-        // light, irregular breeze rippling across silk rather than a clean pulse.
-        const nx = d.x * 0.010;
-        const ny = d.y * 0.014;
-        const w =
-          Math.sin(nx + time * 0.9) +
-          0.7 * Math.sin(ny - time * 0.6) +
-          0.5 * Math.sin((nx + ny) * 0.6 + time * 1.3);
-        const field = w / 2.2; // ~[-1, 1]
+        // Independent size pulse: each dot grows and shrinks on its own phase.
+        const pulse = 0.5 + 0.5 * Math.sin(time * d.sp + d.ph); // 0..1
 
-        // Billow: displace along the wave gradient so the cloth lifts and falls.
-        const dx = sway * 0.35 * Math.cos(nx + time * 0.9);
-        const dy = sway * Math.cos(ny - time * 0.6);
+        // Inside the letters the dots are large and bright; the background is a
+        // faint, quietly shifting dotted screen so MLKFS clearly reads as the
+        // lit-up cells.
+        const isBg = d.inWord < 0.5;
+        // Radius: base + swell. Lit dots can swell past the grid spacing and
+        // merge with neighbours; background dots stay tiny.
+        const swell = (0.5 + 0.9 * d.inWord) * d.bias * pulse;
+        let r = maxR * (0.4 + swell);
+        if (isBg) r = (0.14 + 0.12 * pulse) * gapR; // small, gently breathing
+        if (r <= 0.3) continue;
 
-        // Per-dot random flicker, layered on the smooth wave.
-        const flickW = Math.sin(time * d.tw + d.seed * 6.283);
+        // Brightness: letters shimmer between mid and full; background stays
+        // very dim so it's only a texture, never competing with the word.
+        const bright = isBg
+          ? 0.1 + 0.06 * pulse
+          : Math.min(1, 0.4 + 0.6 * pulse);
+        const lvl = Math.min(LEVELS - 1, Math.max(0, Math.floor(bright * LEVELS)));
 
-        // Matrix rain: a bright head falls down each column and leaves a fading
-        // tail, so brightness scrolls top→bottom like terminal code. `head` is
-        // the column's lit position (0..1 of height), wrapping as it falls.
-        const yN = d.y / canvas.height; // 0(top)..1(bottom)
-        const head = ((time * d.cs + d.cp) % 1 + 1) % 1;
-        let below = head - yN; // distance from the head, downward
-        if (below < 0) below += 1; // wrap so the stream is continuous
-        const tail = 0.32; // tail length (fraction of height)
-        const rain =
-          below < tail ? 1 - below / tail : 0; // 1 at head → 0 at tail end
+        // Hue drifts over time so a dot's color changes (R→G→B and back).
+        const hb =
+          Math.floor((((d.hue0 + time * d.hsp * 0.25 + d.hph * 0.02) % 1) + 1) %
+            1 * HUE_BINS) % HUE_BINS;
 
-        // Combine: the falling stream dominates, with the wave + flicker adding
-        // life so it isn't a perfectly even scroll.
-        const liteT = Math.min(
-          1,
-          Math.max(
-            0,
-            0.12 + 0.95 * rain + wave * 0.25 * field + flick * 0.2 * flickW
-          )
-        );
-
-        // Radius stays roughly constant; the look is carried by brightness, so
-        // dark dots still hold the letter shape instead of disappearing.
-        const r = d.cov * maxR;
-        if (r <= 0.2) continue;
-
-        const lvl = Math.min(LEVELS - 1, Math.max(0, Math.floor(liteT * LEVELS)));
-        const p = paths[d.ci][lvl];
-        const px = d.x + dx;
-        const py = d.y + dy;
-        p.moveTo(px + r, py);
-        p.arc(px, py, r, 0, Math.PI * 2);
+        const p = paths[hb][lvl];
+        p.moveTo(d.x + r, d.y);
+        p.arc(d.x, d.y, r, 0, Math.PI * 2);
       }
 
-      for (let ci = 0; ci < COLORS.length; ci++) {
-        const c = COLORS[ci];
+      // "Lighter" compositing makes overlapping big dots blend their colors
+      // (red over green → yellow-ish) like real adjacent sub-pixels bleeding.
+      ctx.globalCompositeOperation = "lighter";
+      for (let hb = 0; hb < HUE_BINS; hb++) {
         for (let l = 0; l < LEVELS; l++) {
-          // Scale the pure color toward black: level 0 ≈ 0% brightness,
-          // top level = full 100% saturated R/G/B.
-          const b = (l + 1) / LEVELS;
-          ctx.fillStyle = `rgb(${Math.round(c[0] * b)}, ${Math.round(
-            c[1] * b
-          )}, ${Math.round(c[2] * b)})`;
-          ctx.fill(paths[ci][l]);
+          ctx.fillStyle = styles[hb][l];
+          ctx.fill(paths[hb][l]);
         }
       }
+      ctx.globalCompositeOperation = "source-over";
     }
 
     function loop(t: number) {
