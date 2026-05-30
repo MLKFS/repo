@@ -191,7 +191,9 @@ function computeEP(tsec){
   const o = {};
   for (const k in DEFAULTS){
     const d = DEFAULTS[k]; let v = P[k];
-    if (evolveOn && EVO[k]){
+    // Structural params (grid spacing/halo/width) never drift — rebuilding the
+    // grid every frame makes the dots jump. They stay fixed per device/resolution.
+    if (evolveOn && EVO[k] && !d.rebuild){
       const swing = evolveDepth * (d.max - d.min) / 2;
       const rate  = EVO[k].rate * evoSpeed[k] * evolveSpeed;
       v += Math.sin(tsec * rate + EVO[k].phase) * swing;
@@ -223,9 +225,11 @@ const fmt = (v, step) => step >= 1 ? Math.round(v) : Math.round(v*100)/100;
   ed.addEventListener("input", ()=>{ evolveDepth = parseFloat(ed.value); g.querySelector("#v_evod").textContent = evolveDepth; });
 
   const sg = document.createElement("div"); sg.className = "group";
-  sg.innerHTML = `<h2>Change speed / variable</h2>`;
+  sg.innerHTML = `<h2>Change speed / variable</h2>
+    <p class="hint" style="margin:0 0 8px">Grid spacing / halo / width stay fixed (set them per device above) — drifting them rebuilds the grid and makes the dots stutter.</p>`;
   for (const k in DEFAULTS){
     const d = DEFAULTS[k];
+    if (d.rebuild) continue;                 // structural params don't evolve
     const row = document.createElement("div"); row.className = "row";
     row.innerHTML = `<label>${d.label}</label><span class="val" id="es_v_${k}">1</span>
       <input id="es_${k}" type="range" min="0" max="5" step="0.1" value="1">`;
@@ -359,10 +363,8 @@ function loop(t){
   lastTsec = t*0.001;
   EP = computeEP(lastTsec);
   if (evolveOn && evolveDepth > 0){
-    // grid-shape params (spacing/halo/width) need a rebuild — throttle it
-    if (t - lastBuild > 160){ lastBuild = t; build(); }
-    // show the live drifting values on the sliders' readouts
-    for (const k in DEFAULTS){ if (valEls[k]) valEls[k].textContent = fmt(EP[k], DEFAULTS[k].step); }
+    // show the live drifting values on the readouts (structural params stay put)
+    for (const k in DEFAULTS){ if (valEls[k] && !DEFAULTS[k].rebuild) valEls[k].textContent = fmt(EP[k], DEFAULTS[k].step); }
   }
   draw(t);
   raf=requestAnimationFrame(loop);
