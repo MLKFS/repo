@@ -46,6 +46,13 @@ const word = "MLKFS";
     if (!ctx) return;
 
     const word = root.dataset.word || "MLKFS";
+    // Match the site's system font: SF (San Francisco) on Apple devices, then
+    // Segoe/Helvetica/Arial elsewhere. We list -apple-system/BlinkMacSystemFont
+    // (which Safari's canvas honours) rather than the `system-ui`/`ui-sans-serif`
+    // generics (which Safari's canvas ignores, falling back to 10px).
+    const FAMILY =
+      `-apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif`;
+    const fontAt = (px: number) => `bold ${px}px ${FAMILY}`;
     // iOS Safari reports reduce-motion when Low Power Mode is on, which is very
     // common. Rather than freezing the hero, we keep it alive but make the
     // breathing gentler and slower so it stays comfortable.
@@ -125,8 +132,7 @@ const word = "MLKFS";
       // `ui-sans-serif`/`system-ui` generics and silently falls back to 10px,
       // which produced an empty mask (no dots) on iOS.
       const targetW = canvas.width * 0.92;
-      const font = (px: number) =>
-        `bold ${px}px "Helvetica Neue", Helvetica, Arial, sans-serif`;
+      const font = fontAt;
       // Measure at a fixed reference size, then scale — avoids depending on the
       // first measurement being taken at the final size.
       const ref = 100;
@@ -220,14 +226,13 @@ const word = "MLKFS";
     function drawWordFallback() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       const targetW = canvas.width * 0.92;
-      const fam = `bold 100px "Helvetica Neue", Helvetica, Arial, sans-serif`;
-      ctx.font = fam;
+      ctx.font = fontAt(100);
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       const measured = ctx.measureText(word).width || 100;
       let px = (100 * targetW) / measured;
       px = Math.max(12, Math.min(px, canvas.height * 1.1));
-      ctx.font = `bold ${px}px "Helvetica Neue", Helvetica, Arial, sans-serif`;
+      ctx.font = fontAt(px);
       ctx.fillStyle = "#111";
       ctx.fillText(word, canvas.width / 2, canvas.height / 2);
     }
