@@ -1,7 +1,7 @@
-# MLKFS — Remote Post-Production Studio 🎬🎧
+# MLKFS — Audio-Visual, Software & Creative 🎬🎧💻
 
-**MLKFS LLC** is a remote finishing studio based in California.  
-We bring the craft of post-production — in both image and sound — to projects worldwide.  
+**MLKFS LLC** is a California-based company working across audio-visual, software, and creative fields.  
+We build and apply technology — in image, sound, and software — for projects worldwide.  
 
 Our scope covers:  
 🎞️ Video Editing · 🎨 Color Grading · 🔊 Sound Design  
