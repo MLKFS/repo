@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="robots" content="noindex" />
+<title>MLKFS Hero Lab</title>
+<style>
+  :root { --accent:#b5d65a; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: #fff; color: #111;
+    font: 14px/1.4 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  header { padding: 14px 16px; border-bottom: 1px solid #0001; }
+  header h1 { font-size: 16px; margin: 0 0 2px; }
+  header p { margin: 0; color: #666; font-size: 12px; }
+  .stagewrap { border-bottom: 1px solid #0001; display:flex; justify-content:center; background:
+    repeating-conic-gradient(#fafafa 0% 25%, #fff 0% 50%) 50% / 20px 20px; }
+  .stage {
+    position: relative; width: 100%; height: clamp(160px, 34vw, 320px);
+    background:#fff;
+  }
+  .stage.mobile { max-width: 390px; height: 220px; border-left:1px solid #0001; border-right:1px solid #0001; }
+  .stage canvas { display: block; width: 100%; height: 100%; }
+  .devtoggle { display:flex; gap:0; border:1px solid #0003; border-radius:8px; overflow:hidden; }
+  .devtoggle button { border:0; border-radius:0; padding:7px 14px; background:#fff; font-size:13px; }
+  .devtoggle button.on { background: var(--accent); }
+  .word-input {
+    padding: 10px 16px; border-bottom: 1px solid #0001; display:flex; gap:10px; align-items:center; flex-wrap:wrap;
+  }
+  .word-input input[type=text]{ font-size:15px; padding:6px 10px; border:1px solid #0003; border-radius:8px; width:140px; }
+  .panel { padding: 12px 16px 80px; display: grid; gap: 18px; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+  .group { border: 1px solid #0001; border-radius: 12px; padding: 12px 14px; }
+  .group h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color:#888; margin: 0 0 10px; }
+  .row { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; align-items: center; margin: 9px 0; }
+  .row label { font-size: 13px; color:#333; grid-column: 1 / 2; }
+  .row .val { font-variant-numeric: tabular-nums; color:#666; font-size:12px; text-align:right; min-width: 48px; }
+  .row input[type=range] { grid-column: 1 / 3; width: 100%; accent-color: var(--accent); }
+  .row.check { grid-template-columns: 1fr auto; }
+  .actions {
+    position: fixed; left: 0; right: 0; bottom: 0; padding: 12px 16px;
+    background: #fffd; backdrop-filter: blur(8px); border-top: 1px solid #0001; display: flex; gap: 10px; align-items:center;
+  }
+  button {
+    font: inherit; font-weight: 600; padding: 10px 16px; border-radius: 999px; border: 1px solid #111; background:#fff; cursor:pointer;
+  }
+  button.primary { background: var(--accent); border-color: var(--accent); }
+  .hint { color:#777; font-size:12px; }
+  textarea { position:fixed; left:-9999px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>MLKFS Hero Lab</h1>
+  <p>Design <b>Desktop</b> and <b>Mobile</b> separately — switch with the toggle; each keeps its own sliders. The preview mimics that device width. When happy, tap “Copy config” and send me the text.</p>
+</header>
+
+<div class="stagewrap"><div class="stage" id="stage"><canvas id="cv"></canvas></div></div>
+
+<div class="word-input">
+  <div class="devtoggle">
+    <button id="dev-desktop" class="on">🖥 Desktop</button>
+    <button id="dev-mobile">📱 Mobile</button>
+  </div>
+  <label>Word: <input id="word" type="text" value="MLKFS" /></label>
+  <button id="reseed">New random seed</button>
+  <span class="hint" id="dotcount"></span>
+</div>
+
+<div class="panel" id="panel"></div>
+
+<div class="actions">
+  <button class="primary" id="copy">Copy config</button>
+  <button id="reset">Reset</button>
+  <span class="hint" id="copied"></span>
+</div>
+<textarea id="clip"></textarea>
+
+<script>
+// ---- Tunable parameters (every variable bound to a slider) ----
+const DEFAULTS = {
+  // grid / shape (rebuild on change)
+  gap:            { v: 9,    min: 5,   max: 22,  step: 1,    label: "Dot spacing (px)", rebuild: true },
+  blur:           { v: 2,    min: 0,   max: 5,   step: 1,    label: "Letter halo / fade (cells)", rebuild: true },
+  fillWidth:      { v: 0.92, min: 0.5, max: 1,   step: 0.01, label: "Word width fill", rebuild: true },
+
+  // motion
+  pace:           { v: 0.35, min: 0.05,max: 2,   step: 0.05, label: "Overall speed ×" },
+  pulseMin:       { v: 0.25, min: 0.05,max: 2,   step: 0.05, label: "Pulse speed min" },
+  pulseMax:       { v: 1.15, min: 0.1, max: 3,   step: 0.05, label: "Pulse speed max" },
+  hueSpeed:       { v: 0.25, min: 0,   max: 2,   step: 0.05, label: "Hue drift speed" },
+
+  // size
+  rMax:           { v: 0.62, min: 0.3, max: 1.2, step: 0.02, label: "Max radius (× spacing)" },
+  sizeBase:       { v: 0.12, min: 0,   max: 0.6, step: 0.01, label: "Base size" },
+  sizeNear:       { v: 0.5,  min: 0,   max: 1.2, step: 0.02, label: "Word size boost" },
+  sizePulse:      { v: 0.18, min: 0,   max: 0.8, step: 0.02, label: "Pulse size amount" },
+
+  // color / brightness
+  brightBase:     { v: 0.35, min: 0,   max: 1,   step: 0.02, label: "Brightness floor" },
+  brightPulse:    { v: 0.65, min: 0,   max: 1,   step: 0.02, label: "Brightness pulse" },
+  sat:            { v: 1.0,  min: 0.3, max: 1,   step: 0.02, label: "Color saturation" },
+
+  // background (gray, silk)
+  bgGray:         { v: 205,  min: 120, max: 250, step: 1,    label: "Bg gray (low=darker)" },
+  bgSize:         { v: 0.30, min: 0,   max: 0.8, step: 0.02, label: "Bg dot size" },
+  silkSpeed:      { v: 2.2,  min: 0,   max: 6,   step: 0.1,  label: "Silk wave speed" },
+  silkFreqX:      { v: 0.012,min: 0.002,max: 0.05,step: 0.001,label: "Silk wave size X" },
+  silkFreqY:      { v: 0.016,min: 0.002,max: 0.05,step: 0.001,label: "Silk wave size Y" },
+};
+
+const GROUPS = [
+  ["Grid & shape", ["gap","blur","fillWidth"]],
+  ["Motion", ["pace","pulseMin","pulseMax","hueSpeed"]],
+  ["Dot size", ["rMax","sizeBase","sizeNear","sizePulse"]],
+  ["Color", ["brightBase","brightPulse","sat"]],
+  ["Background (silk)", ["bgGray","bgSize","silkSpeed","silkFreqX","silkFreqY"]],
+];
+
+// Two independent configs — desktop and mobile keep separate values.
+function freshConfig(){ const o={}; for(const k in DEFAULTS) o[k]=DEFAULTS[k].v; return o; }
+const CONFIG = { desktop: freshConfig(), mobile: freshConfig() };
+// Sensible mobile starting point: tighter dots so the word reads on a phone.
+CONFIG.mobile.gap = 7;
+let device = "desktop";
+let P = CONFIG[device]; // active config the sliders edit
+
+// ---- Build the slider panel ----
+const panel = document.getElementById("panel");
+const valEls = {};
+for (const [title, keys] of GROUPS) {
+  const g = document.createElement("div"); g.className = "group";
+  g.innerHTML = `<h2>${title}</h2>`;
+  for (const k of keys) {
+    const d = DEFAULTS[k];
+    const row = document.createElement("div"); row.className = "row";
+    row.innerHTML = `
+      <label for="s_${k}">${d.label}</label>
+      <span class="val" id="v_${k}">${P[k]}</span>
+      <input id="s_${k}" type="range" min="${d.min}" max="${d.max}" step="${d.step}" value="${P[k]}" />`;
+    g.appendChild(row);
+    const input = row.querySelector("input");
+    valEls[k] = row.querySelector(".val");
+    input.addEventListener("input", () => {
+      P[k] = parseFloat(input.value);
+      valEls[k].textContent = P[k];
+      if (d.rebuild) build();
+    });
+  }
+  panel.appendChild(g);
+}
+
+// Reflect the active config onto every slider (used when switching device).
+function syncSliders(){
+  for (const k in DEFAULTS){
+    const s = document.getElementById("s_"+k);
+    if (s){ s.value = P[k]; valEls[k].textContent = P[k]; }
+  }
+}
+
+function setDevice(dev){
+  device = dev;
+  P = CONFIG[device];
+  document.getElementById("dev-desktop").classList.toggle("on", dev==="desktop");
+  document.getElementById("dev-mobile").classList.toggle("on", dev==="mobile");
+  document.getElementById("stage").classList.toggle("mobile", dev==="mobile");
+  syncSliders();
+  build();
+}
+document.getElementById("dev-desktop").addEventListener("click", ()=>setDevice("desktop"));
+document.getElementById("dev-mobile").addEventListener("click", ()=>setDevice("mobile"));
+
+// ---- The animation (mirrors the site hero, reading from P) ----
+const canvas = document.getElementById("cv");
+const ctx = canvas.getContext("2d");
+let SEED = Math.random();
+let dots = [], gapR = 9, dpr = 1;
+const HUE_BINS = 24, LEVELS = 8;
+
+const layer = document.createElement("canvas");
+const lctx = layer.getContext("2d");
+
+const COLORS = [[255,0,0],[0,255,0],[0,0,255]];
+function wheel(h){ const s=((h%1)+1)%1, seg=s*3, i=Math.floor(seg), f=seg-i;
+  const a=COLORS[i%3], b=COLORS[(i+1)%3];
+  return [a[0]+(b[0]-a[0])*f, a[1]+(b[1]-a[1])*f, a[2]+(b[2]-a[2])*f]; }
+
+function build(){
+  const stage = canvas.parentElement;
+  const cssW = stage.clientWidth, cssH = stage.clientHeight;
+  if (!cssW || !cssH) return;
+  dpr = Math.min(window.devicePixelRatio||1, 2);
+  canvas.width = layer.width = Math.round(cssW*dpr);
+  canvas.height = layer.height = Math.round(cssH*dpr);
+
+  const mask = document.createElement("canvas");
+  mask.width = canvas.width; mask.height = canvas.height;
+  const m = mask.getContext("2d");
+  m.fillStyle="#000"; m.textAlign="center"; m.textBaseline="middle";
+  const FAM = `bold REFpx -apple-system, BlinkMacSystemFont, "SF Pro Display", Helvetica, Arial, sans-serif`;
+  const word = (document.getElementById("word").value || "MLKFS");
+  m.font = FAM.replace("REF","100");
+  const measured = m.measureText(word).width || 100;
+  let fontPx = (100 * canvas.width * P.fillWidth) / measured;
+  fontPx = Math.max(12, Math.min(fontPx, canvas.height*1.1));
+  m.font = FAM.replace("REF", String(fontPx));
+  m.clearRect(0,0,mask.width,mask.height);
+  m.fillText(word, mask.width/2, mask.height/2);
+  const data = m.getImageData(0,0,mask.width,mask.height).data;
+
+  const gap = Math.max(5, Math.round(P.gap*dpr));
+  gapR = gap;
+
+  const cols = Math.ceil(canvas.width/gap), rowsN = Math.ceil(canvas.height/gap);
+  const near = new Float32Array(cols*rowsN);
+  const SR = Math.round(P.blur);
+  let ci=0;
+  for(let gy=0; gy<rowsN; gy++) for(let gx=0; gx<cols; gx++){
+    let sum=0,n=0;
+    for(let oy=-SR; oy<=SR; oy++) for(let ox=-SR; ox<=SR; ox++){
+      const sx=Math.round((gx+0.5+ox)*gap), sy=Math.round((gy+0.5+oy)*gap);
+      if(sx<0||sy<0||sx>=mask.width||sy>=mask.height) continue;
+      sum += data[(sy*mask.width+sx)*4+3]/255; n++;
+    }
+    near[ci++] = n? sum/n : 0;
+  }
+  const rand=(a,b)=>{ const h=Math.sin(a*127.1+b*311.7+SEED*6131.7)*43758.5453; return h-Math.floor(h); };
+  dots=[];
+  for(let y=gap/2; y<canvas.height; y+=gap) for(let x=gap/2; x<canvas.width; x+=gap){
+    const gx=Math.min(cols-1,Math.floor(x/gap)), gy=Math.min(rowsN-1,Math.floor(y/gap));
+    const raw=near[gy*cols+gx]; const inWord=raw*raw*(3-2*raw);
+    const r1=rand(x,y), r2=rand(x+7.3,y-3.1), r3=rand(x*0.5+19,y*0.7+5), r4=rand(x-11,y+23);
+    dots.push({ x,y,inWord, ph:r1*6.283, sp:r2, hph:r3*6.283, hsp:r4, hue0:r1, bias:0.6+r2*1.1 });
+  }
+  document.getElementById("dotcount").textContent = dots.length + " dots";
+}
+
+function draw(t){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  const time=(t)*0.001*P.pace;
+  const colorPaths = Array.from({length:HUE_BINS},()=>Array.from({length:LEVELS},()=>new Path2D()));
+  const grayPaths = Array.from({length:LEVELS},()=>new Path2D());
+  const wt=time*P.silkSpeed;
+  const silkAt=(x,y)=>{ const nx=x*P.silkFreqX, ny=y*P.silkFreqY;
+    const w=Math.sin(nx+wt*0.9)+0.7*Math.sin(ny-wt*0.6)+0.5*Math.sin((nx+ny)*0.6+wt*1.3);
+    return 0.5+0.5*(w/2.2); };
+  const rMax=gapR*P.rMax;
+  const pSpan=Math.max(0, P.pulseMax-P.pulseMin);
+  for(const d of dots){
+    const sp=P.pulseMin + d.sp*pSpan;
+    const ownPulse=0.5+0.5*Math.sin(time*sp+d.ph);
+    const near=d.inWord;
+    const silk=silkAt(d.x,d.y);
+    const pulse=silk+(ownPulse-silk)*near;
+    const r=Math.min(rMax,(P.sizeBase+near*P.sizeNear+P.sizePulse*pulse)*gapR);
+    if(r<=0.3) continue;
+    const bright=Math.min(1,P.brightBase+P.brightPulse*pulse);
+    const bl=Math.min(LEVELS-1,Math.max(0,Math.floor(bright*LEVELS)));
+    if(near<0.5){
+      const rb=Math.min(rMax,(P.sizeBase*0.5 + P.bgSize*pulse)*gapR);
+      if(rb<=0.3) continue;
+      grayPaths[bl].moveTo(d.x+rb,d.y); grayPaths[bl].arc(d.x,d.y,rb,0,6.2832);
+    } else {
+      const hb=Math.floor((((d.hue0+time*P.hueSpeed*0.25*d.hsp+d.hph*0.02)%1)+1)%1*HUE_BINS)%HUE_BINS;
+      colorPaths[hb][bl].moveTo(d.x+r,d.y); colorPaths[hb][bl].arc(d.x,d.y,r,0,6.2832);
+    }
+  }
+  // gray bg
+  for(let bl=0; bl<LEVELS; bl++){
+    const b=(bl+1)/LEVELS; const g=Math.round(P.bgGray+(255-P.bgGray)*(1-b));
+    ctx.fillStyle=`rgb(${g},${g},${g})`; ctx.fill(grayPaths[bl]);
+  }
+  // colored additive
+  lctx.clearRect(0,0,layer.width,layer.height);
+  lctx.globalCompositeOperation="lighter";
+  for(let hb=0; hb<HUE_BINS; hb++){
+    const c=wheel((hb+0.5)/HUE_BINS);
+    for(let bl=0; bl<LEVELS; bl++){
+      const b=(bl+1)/LEVELS;
+      // desaturate toward gray-white by P.sat
+      const mixv=(ch)=>{ const full=ch*b; const grayv=255*b*0.6; return Math.round(grayv+(full-grayv)*P.sat); };
+      lctx.fillStyle=`rgb(${mixv(c[0])},${mixv(c[1])},${mixv(c[2])})`;
+      lctx.fill(colorPaths[hb][bl]);
+    }
+  }
+  lctx.globalCompositeOperation="source-over";
+  ctx.drawImage(layer,0,0);
+}
+
+let raf;
+function loop(t){ draw(t); raf=requestAnimationFrame(loop); }
+
+document.getElementById("word").addEventListener("input", build);
+document.getElementById("reseed").addEventListener("click", ()=>{ SEED=Math.random(); build(); });
+window.addEventListener("resize", build);
+
+document.getElementById("reset").addEventListener("click", ()=>{
+  CONFIG[device] = freshConfig();
+  if (device==="mobile") CONFIG.mobile.gap = 7;
+  P = CONFIG[device];
+  syncSliders(); build();
+});
+
+document.getElementById("copy").addEventListener("click", ()=>{
+  const cfg = JSON.stringify({ desktop: CONFIG.desktop, mobile: CONFIG.mobile }, null, 2);
+  const ta = document.getElementById("clip"); ta.value = cfg; ta.select();
+  try { navigator.clipboard.writeText(cfg); } catch(e){}
+  try { document.execCommand("copy"); } catch(e){}
+  document.getElementById("copied").textContent = "Copied both — paste it to me.";
+  setTimeout(()=>document.getElementById("copied").textContent="", 2500);
+});
+
+build();
+raf=requestAnimationFrame(loop);
+</script>
+</body>
+</html>
