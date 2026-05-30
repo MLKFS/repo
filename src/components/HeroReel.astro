@@ -287,9 +287,10 @@ const word = "MLKFS";
         return 0.5 + 0.5 * (w / 2.2); // 0..1
       };
 
-      // Cap the radius so dots only gently overlap and the word stays legible —
-      // no giant circles swallowing the letters.
-      const rMax = gapR * 0.62;
+      // Cap the radius at the neighbour's centre: a dot can grow until its edge
+      // reaches the next cell's centre (one grid spacing), so cells overlap and
+      // blend but never swallow whole letters.
+      const rMax = gapR;
 
       for (const d of dots) {
         // Independent size pulse: each dot grows and shrinks on its own phase.
@@ -300,9 +301,9 @@ const word = "MLKFS";
         const silk = silkAt(d.x, d.y);
         const pulse = silk + (ownPulse - silk) * near;
 
-        // Size eases from tiny specks (far) to nearly-touching cells (word),
-        // but is clamped so neighbours overlap only slightly.
-        const r = Math.min(rMax, (0.12 + near * 0.5 + 0.18 * pulse) * gapR);
+        // Size eases from tiny specks (far) to full cells (word). On the word a
+        // fully-pulsed dot reaches rMax (the neighbour's centre); clamped there.
+        const r = Math.min(rMax, (0.12 + near * 0.6 + 0.4 * pulse) * gapR);
         if (r <= 0.3) continue;
 
         const bright = Math.min(1, 0.35 + 0.65 * pulse);
