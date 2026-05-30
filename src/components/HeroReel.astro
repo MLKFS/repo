@@ -56,9 +56,17 @@ const word = "MLKFS";
     const base = 1 - amp; // keeps peak radius ~constant across modes
     const moveScale = reduceMotion ? 0.5 : 1; // gentler drift in low-power mode
 
+    // Print-channel palette: black, blue, red, green.
+    const palette: RGB[] = [
+      [17, 17, 17],
+      [0, 71, 255],
+      [255, 45, 45],
+      [0, 177, 64],
+    ];
+
     // Shimmer levels: each color is pre-shaded into LEVELS brightness steps so
     // the silk catches light on wave crests and darkens in troughs, while we
-    // still only issue a handful of fills per frame.
+    // still only issue a handful of fills per frame. (Must come after `palette`.)
     const LEVELS = 5;
     const mix = (c: RGB, target: number, t: number): RGB =>
       [
@@ -77,14 +85,6 @@ const word = "MLKFS";
       }
       return row;
     });
-
-    // Print-channel palette: black, blue, red, green.
-    const palette: RGB[] = [
-      [17, 17, 17],
-      [0, 71, 255],
-      [255, 45, 45],
-      [0, 177, 64],
-    ];
 
     type Dot = {
       x: number;
@@ -121,13 +121,20 @@ const word = "MLKFS";
       mctx.textBaseline = "middle";
 
       // Grow the font until the word fills ~92% of the width.
-      let fontPx = canvas.height;
+      // NB: use a concrete family stack — Safari's canvas rejects the
+      // `ui-sans-serif`/`system-ui` generics and silently falls back to 10px,
+      // which produced an empty mask (no dots) on iOS.
       const targetW = canvas.width * 0.92;
       const font = (px: number) =>
-        `800 ${px}px ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif`;
-      mctx.font = font(fontPx);
-      let measured = mctx.measureText(word).width;
-      fontPx = Math.max(8, (fontPx * targetW) / measured);
+        `bold ${px}px "Helvetica Neue", Helvetica, Arial, sans-serif`;
+      // Measure at a fixed reference size, then scale — avoids depending on the
+      // first measurement being taken at the final size.
+      const ref = 100;
+      mctx.font = font(ref);
+      const measured = mctx.measureText(word).width || ref;
+      let fontPx = (ref * targetW) / measured;
+      // Keep within the band so it never overflows or collapses.
+      fontPx = Math.max(12, Math.min(fontPx, canvas.height * 1.1));
       mctx.font = font(fontPx);
       mctx.clearRect(0, 0, mask.width, mask.height);
       mctx.fillText(word, mask.width / 2, mask.height / 2);
@@ -208,9 +215,34 @@ const word = "MLKFS";
       raf = requestAnimationFrame(loop);
     }
 
+    // Last resort: if no dots were produced (e.g. a canvas-text quirk), draw the
+    // word plainly so the hero is never blank.
+    function drawWordFallback() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const targetW = canvas.width * 0.92;
+      const fam = `bold 100px "Helvetica Neue", Helvetica, Arial, sans-serif`;
+      ctx.font = fam;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      const measured = ctx.measureText(word).width || 100;
+      let px = (100 * targetW) / measured;
+      px = Math.max(12, Math.min(px, canvas.height * 1.1));
+      ctx.font = `bold ${px}px "Helvetica Neue", Helvetica, Arial, sans-serif`;
+      ctx.fillStyle = "#111";
+      ctx.fillText(word, canvas.width / 2, canvas.height / 2);
+    }
+
     function start() {
       cancelAnimationFrame(raf);
-      build();
+      try {
+        build();
+      } catch (e) {
+        dots = [];
+      }
+      if (dots.length === 0) {
+        drawWordFallback();
+        return;
+      }
       // Always animate — even under reduce-motion / Low Power Mode — just with
       // gentler drift/amplitude set by `moveScale`/`amp` above.
       raf = requestAnimationFrame(loop);
