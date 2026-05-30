@@ -171,10 +171,75 @@ function setDevice(dev){
 document.getElementById("dev-desktop").addEventListener("click", ()=>setDevice("desktop"));
 document.getElementById("dev-mobile").addEventListener("click", ()=>setDevice("mobile"));
 
+// ---- Evolve mode: every variable drifts at its own (seedable) speed ----
+let SEED = Math.random();
+let evolveOn = false, evolveSpeed = 1, evolveDepth = 0.5, lastTsec = 0, lastBuild = 0;
+const evoSpeed = {};              // per-variable change-speed multiplier (0 = frozen)
+for (const k in DEFAULTS) evoSpeed[k] = 1;
+let EVO = {};                     // per-variable base rate + phase, derived from SEED
+function seedEvo(){
+  EVO = {}; let i = 0;
+  for (const k in DEFAULTS){
+    const h = Math.sin((i+1)*12.9898 + SEED*78.233) * 43758.5453;
+    const f = h - Math.floor(h);
+    EVO[k] = { rate: 0.10 + f*0.8, phase: Math.sin((i+3)*4.1 + SEED*19.0)*Math.PI };
+    i++;
+  }
+}
+let EP = {};                      // effective (drifted) params for the current frame
+function computeEP(tsec){
+  const o = {};
+  for (const k in DEFAULTS){
+    const d = DEFAULTS[k]; let v = P[k];
+    if (evolveOn && EVO[k]){
+      const swing = evolveDepth * (d.max - d.min) / 2;
+      const rate  = EVO[k].rate * evoSpeed[k] * evolveSpeed;
+      v += Math.sin(tsec * rate + EVO[k].phase) * swing;
+      if (v < d.min) v = d.min; else if (v > d.max) v = d.max;
+      if (d.step >= 1) v = Math.round(v);
+    }
+    o[k] = v;
+  }
+  return o;
+}
+const fmt = (v, step) => step >= 1 ? Math.round(v) : Math.round(v*100)/100;
+
+// Evolve UI: master toggle + global speed/depth, then a change-speed slider per variable.
+(function buildEvolveUI(){
+  const g = document.createElement("div"); g.className = "group";
+  g.innerHTML = `<h2>Evolve (auto-drift)</h2>
+    <div class="row check"><label for="evo_on">Animate all variables</label>
+      <input id="evo_on" type="checkbox" style="width:18px;height:18px;accent-color:var(--accent)"></div>
+    <div class="row"><label>Global speed ×</label><span class="val" id="v_evos">1</span>
+      <input id="s_evos" type="range" min="0" max="4" step="0.05" value="1"></div>
+    <div class="row"><label>Depth (swing)</label><span class="val" id="v_evod">0.5</span>
+      <input id="s_evod" type="range" min="0" max="1" step="0.02" value="0.5"></div>
+    <p class="hint" style="margin:8px 0 0">Each variable drifts on its own seeded rhythm — “New random seed” gives a fresh combination.</p>`;
+  panel.prepend(g);
+  const on = g.querySelector("#evo_on");
+  on.addEventListener("change", ()=>{ evolveOn = on.checked; if(!evolveOn) syncSliders(); });
+  const es = g.querySelector("#s_evos"), ed = g.querySelector("#s_evod");
+  es.addEventListener("input", ()=>{ evolveSpeed = parseFloat(es.value); g.querySelector("#v_evos").textContent = evolveSpeed; });
+  ed.addEventListener("input", ()=>{ evolveDepth = parseFloat(ed.value); g.querySelector("#v_evod").textContent = evolveDepth; });
+
+  const sg = document.createElement("div"); sg.className = "group";
+  sg.innerHTML = `<h2>Change speed / variable</h2>`;
+  for (const k in DEFAULTS){
+    const d = DEFAULTS[k];
+    const row = document.createElement("div"); row.className = "row";
+    row.innerHTML = `<label>${d.label}</label><span class="val" id="es_v_${k}">1</span>
+      <input id="es_${k}" type="range" min="0" max="5" step="0.1" value="1">`;
+    sg.appendChild(row);
+    const inp = row.querySelector("input");
+    inp.addEventListener("input", ()=>{ evoSpeed[k] = parseFloat(inp.value); row.querySelector(".val").textContent = evoSpeed[k]; });
+  }
+  panel.appendChild(sg);
+})();
+seedEvo();
+
 // ---- The animation (mirrors the site hero, reading from P) ----
 const canvas = document.getElementById("cv");
 const ctx = canvas.getContext("2d");
-let SEED = Math.random();
 let dots = [], gapR = 9, dpr = 1;
 const HUE_BINS = 24, LEVELS = 8;
 
@@ -187,6 +252,7 @@ function wheel(h){ const s=((h%1)+1)%1, seg=s*3, i=Math.floor(seg), f=seg-i;
   return [a[0]+(b[0]-a[0])*f, a[1]+(b[1]-a[1])*f, a[2]+(b[2]-a[2])*f]; }
 
 function build(){
+  EP = computeEP(lastTsec);
   const stage = canvas.parentElement;
   const cssW = stage.clientWidth, cssH = stage.clientHeight;
   if (!cssW || !cssH) return;
@@ -202,19 +268,19 @@ function build(){
   const word = (document.getElementById("word").value || "MLKFS");
   m.font = FAM.replace("REF","100");
   const measured = m.measureText(word).width || 100;
-  let fontPx = (100 * canvas.width * P.fillWidth) / measured;
+  let fontPx = (100 * canvas.width * EP.fillWidth) / measured;
   fontPx = Math.max(12, Math.min(fontPx, canvas.height*1.1));
   m.font = FAM.replace("REF", String(fontPx));
   m.clearRect(0,0,mask.width,mask.height);
   m.fillText(word, mask.width/2, mask.height/2);
   const data = m.getImageData(0,0,mask.width,mask.height).data;
 
-  const gap = Math.max(5, Math.round(P.gap*dpr));
+  const gap = Math.max(5, Math.round(EP.gap*dpr));
   gapR = gap;
 
   const cols = Math.ceil(canvas.width/gap), rowsN = Math.ceil(canvas.height/gap);
   const near = new Float32Array(cols*rowsN);
-  const SR = Math.round(P.blur);
+  const SR = Math.round(EP.blur);
   let ci=0;
   for(let gy=0; gy<rowsN; gy++) for(let gx=0; gx<cols; gx++){
     let sum=0,n=0;
@@ -238,37 +304,37 @@ function build(){
 
 function draw(t){
   ctx.clearRect(0,0,canvas.width,canvas.height);
-  const time=(t)*0.001*P.pace;
+  const time=(t)*0.001*EP.pace;
   const colorPaths = Array.from({length:HUE_BINS},()=>Array.from({length:LEVELS},()=>new Path2D()));
   const grayPaths = Array.from({length:LEVELS},()=>new Path2D());
-  const wt=time*P.silkSpeed;
-  const silkAt=(x,y)=>{ const nx=x*P.silkFreqX, ny=y*P.silkFreqY;
+  const wt=time*EP.silkSpeed;
+  const silkAt=(x,y)=>{ const nx=x*EP.silkFreqX, ny=y*EP.silkFreqY;
     const w=Math.sin(nx+wt*0.9)+0.7*Math.sin(ny-wt*0.6)+0.5*Math.sin((nx+ny)*0.6+wt*1.3);
     return 0.5+0.5*(w/2.2); };
-  const rMax=gapR*P.rMax;
-  const pSpan=Math.max(0, P.pulseMax-P.pulseMin);
+  const rMax=gapR*EP.rMax;
+  const pSpan=Math.max(0, EP.pulseMax-EP.pulseMin);
   for(const d of dots){
-    const sp=P.pulseMin + d.sp*pSpan;
+    const sp=EP.pulseMin + d.sp*pSpan;
     const ownPulse=0.5+0.5*Math.sin(time*sp+d.ph);
     const near=d.inWord;
     const silk=silkAt(d.x,d.y);
     const pulse=silk+(ownPulse-silk)*near;
-    const r=Math.min(rMax,(P.sizeBase+near*P.sizeNear+P.sizePulse*pulse)*gapR);
+    const r=Math.min(rMax,(EP.sizeBase+near*EP.sizeNear+EP.sizePulse*pulse)*gapR);
     if(r<=0.3) continue;
-    const bright=Math.min(1,P.brightBase+P.brightPulse*pulse);
+    const bright=Math.min(1,EP.brightBase+EP.brightPulse*pulse);
     const bl=Math.min(LEVELS-1,Math.max(0,Math.floor(bright*LEVELS)));
     if(near<0.5){
-      const rb=Math.min(rMax,(P.sizeBase*0.5 + P.bgSize*pulse)*gapR);
+      const rb=Math.min(rMax,(EP.sizeBase*0.5 + EP.bgSize*pulse)*gapR);
       if(rb<=0.3) continue;
       grayPaths[bl].moveTo(d.x+rb,d.y); grayPaths[bl].arc(d.x,d.y,rb,0,6.2832);
     } else {
-      const hb=Math.floor((((d.hue0+time*P.hueSpeed*0.25*d.hsp+d.hph*0.02)%1)+1)%1*HUE_BINS)%HUE_BINS;
+      const hb=Math.floor((((d.hue0+time*EP.hueSpeed*0.25*d.hsp+d.hph*0.02)%1)+1)%1*HUE_BINS)%HUE_BINS;
       colorPaths[hb][bl].moveTo(d.x+r,d.y); colorPaths[hb][bl].arc(d.x,d.y,r,0,6.2832);
     }
   }
   // gray bg
   for(let bl=0; bl<LEVELS; bl++){
-    const b=(bl+1)/LEVELS; const g=Math.round(P.bgGray+(255-P.bgGray)*(1-b));
+    const b=(bl+1)/LEVELS; const g=Math.round(EP.bgGray+(255-EP.bgGray)*(1-b));
     ctx.fillStyle=`rgb(${g},${g},${g})`; ctx.fill(grayPaths[bl]);
   }
   // colored additive
@@ -278,8 +344,8 @@ function draw(t){
     const c=wheel((hb+0.5)/HUE_BINS);
     for(let bl=0; bl<LEVELS; bl++){
       const b=(bl+1)/LEVELS;
-      // desaturate toward gray-white by P.sat
-      const mixv=(ch)=>{ const full=ch*b; const grayv=255*b*0.6; return Math.round(grayv+(full-grayv)*P.sat); };
+      // desaturate toward gray-white by EP.sat
+      const mixv=(ch)=>{ const full=ch*b; const grayv=255*b*0.6; return Math.round(grayv+(full-grayv)*EP.sat); };
       lctx.fillStyle=`rgb(${mixv(c[0])},${mixv(c[1])},${mixv(c[2])})`;
       lctx.fill(colorPaths[hb][bl]);
     }
@@ -289,10 +355,21 @@ function draw(t){
 }
 
 let raf;
-function loop(t){ draw(t); raf=requestAnimationFrame(loop); }
+function loop(t){
+  lastTsec = t*0.001;
+  EP = computeEP(lastTsec);
+  if (evolveOn && evolveDepth > 0){
+    // grid-shape params (spacing/halo/width) need a rebuild — throttle it
+    if (t - lastBuild > 160){ lastBuild = t; build(); }
+    // show the live drifting values on the sliders' readouts
+    for (const k in DEFAULTS){ if (valEls[k]) valEls[k].textContent = fmt(EP[k], DEFAULTS[k].step); }
+  }
+  draw(t);
+  raf=requestAnimationFrame(loop);
+}
 
 document.getElementById("word").addEventListener("input", build);
-document.getElementById("reseed").addEventListener("click", ()=>{ SEED=Math.random(); build(); });
+document.getElementById("reseed").addEventListener("click", ()=>{ SEED=Math.random(); seedEvo(); build(); });
 window.addEventListener("resize", build);
 
 document.getElementById("reset").addEventListener("click", ()=>{
@@ -303,7 +380,11 @@ document.getElementById("reset").addEventListener("click", ()=>{
 });
 
 document.getElementById("copy").addEventListener("click", ()=>{
-  const cfg = JSON.stringify({ desktop: CONFIG.desktop, mobile: CONFIG.mobile }, null, 2);
+  const cfg = JSON.stringify({
+    desktop: CONFIG.desktop,
+    mobile: CONFIG.mobile,
+    evolve: { enabled: evolveOn, globalSpeed: evolveSpeed, depth: evolveDepth, speedPerVariable: evoSpeed }
+  }, null, 2);
   const ta = document.getElementById("clip"); ta.value = cfg; ta.select();
   try { navigator.clipboard.writeText(cfg); } catch(e){}
   try { document.execCommand("copy"); } catch(e){}
