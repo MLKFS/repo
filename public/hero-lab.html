@@ -52,9 +52,9 @@
 </head>
 <body>
 <header>
-  <h1>MLKFS Hero Lab <span style="font-weight:400;color:#999;font-size:13px">· 7 taps later 🎉</span></h1>
-  <p><b>You tapped the logo 7 times.</b> Either you’re a developer, or wonderfully bored — either way, welcome to the secret room. 🛠️✨<br>
-  Drag the knobs, hit <b>Animate all variables</b>, watch it breathe. Design <b>Desktop</b> and <b>Mobile</b> separately (toggle above — each keeps its own sliders, preview mimics that width). When it looks great, smash <b>Copy config</b> and send it over.</p>
+  <h1>MLKFS Hero Lab <span style="font-weight:400;color:#999;font-size:13px">· you found it 🎉</span></h1>
+  <p><b>You clicked the dots until they cracked open.</b> Developer, or wonderfully bored? Either way — welcome to the engine room. 🛠️✨<br>
+  Every knob is live. Flip <b>Animate all variables</b> and just watch it breathe, or grab the sliders and grow your own creature. <b>Desktop</b> and <b>Mobile</b> tune separately (toggle above). No rules in here: break it, reseed it, lose track of time. <b>Copy config</b> bottles up a look if you ever want to keep one.</p>
 </header>
 
 <div class="stagewrap"><div class="stage" id="stage"><canvas id="cv"></canvas></div></div>
@@ -104,7 +104,7 @@ const DEFAULTS = {
   sat:            { v: 1.0,  min: 0.3, max: 1,   step: 0.02, label: "Color saturation" },
 
   // background (gray, silk)
-  bgShow:         { v: 1,    min: 0,   max: 1,   step: 1,    label: "Background on/off", fixed: true },
+  bgShow:         { v: 0,    min: 0,   max: 1,   step: 1,    label: "Background on/off", fixed: true },
   bgGray:         { v: 205,  min: 120, max: 250, step: 1,    label: "Bg gray (low=darker)" },
   bgSize:         { v: 0.30, min: 0,   max: 0.8, step: 0.02, label: "Bg dot size" },
   silkSpeed:      { v: 2.2,  min: 0,   max: 6,   step: 0.1,  label: "Silk wave speed" },

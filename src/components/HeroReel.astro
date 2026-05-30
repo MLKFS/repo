@@ -56,7 +56,6 @@ const word = "MLKFS";
         ? crypto.getRandomValues(new Uint32Array(1))[0]
         : (Date.now() ^ (Math.random() * 0xffffffff)) >>> 0) || 1;
     const SEED = seed32 / 0xffffffff; // 0..1
-    const startOffset = SEED * 100000; // random point in the loop (ms-ish)
     // Match the site's system font: SF (San Francisco) on Apple devices, then
     // Segoe/Helvetica/Arial elsewhere. We list -apple-system/BlinkMacSystemFont
     // (which Safari's canvas honours) rather than the `system-ui`/`ui-sans-serif`
@@ -73,6 +72,59 @@ const word = "MLKFS";
     // Overall animation pace; calmer under reduce-motion / Low Power Mode.
     const paceScale = reduceMotion ? 0.5 : 1;
 
+    // ---- "Evolve" engine ----------------------------------------------------
+    // The hero doesn't just pulse — every *visual* variable slowly drifts on its
+    // own seeded rhythm, so the screen continuously builds up, dissolves and
+    // re-forms (always passing through a clear MLKFS). The gray background is off
+    // on the live site (it would reveal the canvas's rectangular edges), so only
+    // the colored letter dots show. Structural values (spacing/halo/width) stay
+    // fixed, and phases are integrated, so nothing ever stutters.
+    const DEPTH = reduceMotion ? 0.32 : 0.5; // how far each variable swings
+    const ESPEED = reduceMotion ? 0.4 : 0.6; // how fast the drift cycles
+    // base = the established look; amp = breathing amplitude around it.
+    const PARAMS: Record<string, { base: number; amp: number }> = {
+      pace: { base: 0.35, amp: 0.16 },
+      pulseMin: { base: 0.25, amp: 0.15 },
+      pulseMax: { base: 1.15, amp: 0.5 },
+      hueSpeed: { base: 0.25, amp: 0.2 },
+      rMax: { base: 0.62, amp: 0.1 },
+      sizeBase: { base: 0.12, amp: 0.06 },
+      sizeNear: { base: 0.5, amp: 0.12 },
+      sizePulse: { base: 0.18, amp: 0.1 },
+      brightBase: { base: 0.35, amp: 0.12 },
+      brightPulse: { base: 0.65, amp: 0.18 },
+      sat: { base: 0.9, amp: 0.12 },
+      silkSpeed: { base: 2.2, amp: 0.9 },
+      silkFreqX: { base: 0.012, amp: 0.004 },
+      silkFreqY: { base: 0.016, amp: 0.005 },
+    };
+    // Per-variable drift rate + phase, seeded so every visit evolves differently.
+    const EVO: Record<string, { rate: number; phase: number }> = {};
+    {
+      let i = 0;
+      for (const k in PARAMS) {
+        const h = Math.sin((i + 1) * 12.9898 + SEED * 78.233) * 43758.5453;
+        const f = h - Math.floor(h);
+        EVO[k] = {
+          rate: (0.1 + f * 0.8) * ESPEED,
+          phase: Math.sin((i + 3) * 4.1 + SEED * 19) * Math.PI,
+        };
+        i++;
+      }
+    }
+    const EP: Record<string, number> = {};
+    function evolve(tsec: number) {
+      for (const k in PARAMS) {
+        const p = PARAMS[k];
+        EP[k] = p.base + Math.sin(tsec * EVO[k].rate + EVO[k].phase) * p.amp * DEPTH;
+      }
+      if (EP.sat > 1) EP.sat = 1;
+    }
+    // Integrated accumulators — keep motion smooth even as speeds drift.
+    let silkAcc = SEED * 50;
+    let evoSec = SEED * 30; // real seconds driving the slow parameter drift
+    let lastT = 0;
+
     // Pure RGB sub-pixels: only red, green, blue — fully saturated. From a
     // distance the three colors blend. Each dot's hue can drift between them.
     const COLORS: RGB[] = [
@@ -81,7 +133,7 @@ const word = "MLKFS";
       [0, 0, 255], // B
     ];
     const HUE_BINS = 24; // quantised R→G→B→R wheel for cheap fills
-    const LEVELS = 7; // brightness steps from ~0% to 100%
+    const LEVELS = 8; // brightness steps from ~0% to 100%
 
     // The whole hero is a screen made of dots (a full grid). MLKFS lights up the
     // dots that fall inside the letters; dots outside stay as a dim background
@@ -91,12 +143,11 @@ const word = "MLKFS";
       x: number;
       y: number;
       inWord: number; // 0..1 coverage from the text mask (0 = background)
-      ph: number; // size pulse phase
-      sp: number; // size pulse speed
-      hph: number; // hue-drift phase
-      hsp: number; // hue-drift speed
+      pAcc: number; // integrated size-pulse phase (seeded start)
+      sp: number; // per-dot pulse rate 0..1 (mapped by pulseMin/Max)
+      hAcc: number; // integrated hue-drift phase (seeded start)
+      hsp: number; // per-dot hue rate 0..1
       hue0: number; // base hue (0..1 around the R/G/B wheel)
-      bias: number; // how much bigger this dot can swell
     };
 
     let dots: Dot[] = [];
@@ -210,12 +261,11 @@ const word = "MLKFS";
             x,
             y,
             inWord,
-            ph: r1 * 6.283, // random start phase
-            sp: 0.25 + r2 * 0.9, // slow, varied pulse speed
-            hph: r3 * 6.283,
-            hsp: 0.15 + r4 * 0.6, // slow hue drift
+            pAcc: r1 * 6.283, // seeded pulse start phase
+            sp: r2, // per-dot pulse rate 0..1 (mapped by pulseMin/Max)
+            hAcc: r3 * 6.283 * 0.02, // seeded hue start phase
+            hsp: r4, // per-dot hue rate 0..1
             hue0: r1, // base color anywhere on the R/G/B wheel
-            bias: 0.6 + r2 * 1.1, // some dots swell much larger than others
           });
         }
       }
@@ -236,50 +286,39 @@ const word = "MLKFS";
       ];
     }
 
-    // Colored dot styles (drawn additively on the offscreen layer):
-    // (hue bin × brightness level), fully saturated R/G/B scaled toward black.
-    const colorStyles: string[][] = Array.from({ length: HUE_BINS }, (_, hb) => {
-      const c = wheel((hb + 0.5) / HUE_BINS);
-      return Array.from({ length: LEVELS }, (_, bl) => {
-        const b = (bl + 1) / LEVELS;
-        return `rgb(${Math.round(c[0] * b)}, ${Math.round(c[1] * b)}, ${Math.round(
-          c[2] * b
-        )})`;
-      });
-    });
-
-    // Background gray styles (drawn normally on the page): light gray when large,
-    // lightening toward white as they shrink so they fade out.
-    const grayStyles: string[] = Array.from({ length: LEVELS }, (_, bl) => {
-      const b = (bl + 1) / LEVELS;
-      const g = Math.round(205 + (255 - 205) * (1 - b));
-      return `rgb(${g}, ${g}, ${g})`;
-    });
+    // Cache the pure R/G/B color for each hue bin; per-frame brightness and the
+    // drifting saturation are applied at fill time.
+    const HUE_RGB: RGB[] = Array.from({ length: HUE_BINS }, (_, hb) =>
+      wheel((hb + 0.5) / HUE_BINS)
+    );
 
     function draw(t: number) {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      // Offset the clock per visit so the loop starts at a random phase.
-      // Slow overall pace — this breathes, it doesn't race.
-      const time = (t + startOffset) * 0.00035 * paceScale;
+      // Smooth, frame-rate-independent time. dt drives integrated phases so the
+      // motion never jumps when a speed variable drifts.
+      const dt = Math.min(0.05, lastT ? (t - lastT) * 0.001 : 0.016);
+      lastT = t;
+      evoSec += dt; // the slow parameter drift advances in real seconds
+      evolve(evoSec);
+      const paceDt = dt * EP.pace * paceScale;
+      silkAcc += paceDt * EP.silkSpeed;
 
-      // Colored dots go on the offscreen layer (hue × brightness) and the gray
-      // background dots go straight on the page (brightness only).
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Only colored letter dots — no gray background (it would outline the
+      // canvas rectangle). Batched by hue × brightness for cheap additive fills.
       const colorPaths: Path2D[][] = Array.from({ length: HUE_BINS }, () =>
         Array.from({ length: LEVELS }, () => new Path2D())
       );
-      const grayPaths: Path2D[] = Array.from(
-        { length: LEVELS },
-        () => new Path2D()
-      );
+      const colorN = Array.from({ length: HUE_BINS }, () => new Int16Array(LEVELS));
 
-      // Silk wave: two crossing low-frequency waves over position + time. Because
-      // it depends on a dot's location (not a random per-dot phase), neighbours
-      // rise and fall together, so the gray background ripples like silk in a
-      // light breeze rather than twinkling at random.
-      const wt = time * 2.2; // wave moves a bit faster than the slow base pace
+      // Silk wave: crossing low-frequency waves over position + time, so the word
+      // dots near the edges breathe coherently rather than twinkling at random.
+      const wt = silkAcc;
+      const fx = EP.silkFreqX;
+      const fy = EP.silkFreqY;
       const silkAt = (x: number, y: number) => {
-        const nx = x * 0.012;
-        const ny = y * 0.016;
+        const nx = x * fx;
+        const ny = y * fy;
         const w =
           Math.sin(nx + wt * 0.9) +
           0.7 * Math.sin(ny - wt * 0.6) +
@@ -287,56 +326,51 @@ const word = "MLKFS";
         return 0.5 + 0.5 * (w / 2.2); // 0..1
       };
 
-      // Cap the radius so dots only gently overlap and the word stays legible —
-      // no giant circles swallowing the letters.
-      const rMax = gapR * 0.62;
+      const rMax = gapR * EP.rMax;
+      const pSpan = Math.max(0, EP.pulseMax - EP.pulseMin);
 
       for (const d of dots) {
-        // Independent size pulse: each dot grows and shrinks on its own phase.
-        const ownPulse = 0.5 + 0.5 * Math.sin(time * d.sp + d.ph); // 0..1
         const near = d.inWord; // 0 far → 1 on the word (already smoothstepped)
-        // Background follows the coherent silk wave; the word keeps its own
-        // lively per-dot pulse. Blend smoothly between the two by nearness.
+        if (near < 0.5) continue; // background is off — skip non-word dots
+
+        const sp = EP.pulseMin + d.sp * pSpan;
+        d.pAcc += paceDt * sp; // integrate pulse phase
+        d.hAcc += paceDt * EP.hueSpeed * 0.25 * d.hsp; // integrate hue phase
+        const ownPulse = 0.5 + 0.5 * Math.sin(d.pAcc);
         const silk = silkAt(d.x, d.y);
         const pulse = silk + (ownPulse - silk) * near;
 
-        // Size eases from tiny specks (far) to nearly-touching cells (word),
-        // but is clamped so neighbours overlap only slightly.
-        const r = Math.min(rMax, (0.12 + near * 0.5 + 0.18 * pulse) * gapR);
+        const r = Math.min(
+          rMax,
+          (EP.sizeBase + near * EP.sizeNear + EP.sizePulse * pulse) * gapR
+        );
         if (r <= 0.3) continue;
 
-        const bright = Math.min(1, 0.35 + 0.65 * pulse);
+        const bright = Math.min(1, EP.brightBase + EP.brightPulse * pulse);
         const bl = Math.min(LEVELS - 1, Math.max(0, Math.floor(bright * LEVELS)));
-
-        if (near < 0.5) {
-          // Background gray dot (drawn on the page, fades to white as it shrinks).
-          grayPaths[bl].moveTo(d.x + r, d.y);
-          grayPaths[bl].arc(d.x, d.y, r, 0, Math.PI * 2);
-        } else {
-          // Colored dot for the word, on the additive layer.
-          const hb =
-            Math.floor((((d.hue0 + time * d.hsp * 0.25 + d.hph * 0.02) % 1) + 1) %
-              1 * HUE_BINS) % HUE_BINS;
-          const p = colorPaths[hb][bl];
-          p.moveTo(d.x + r, d.y);
-          p.arc(d.x, d.y, r, 0, Math.PI * 2);
-        }
+        const hb =
+          Math.floor((((d.hue0 + d.hAcc) % 1) + 1) % 1 * HUE_BINS) % HUE_BINS;
+        colorPaths[hb][bl].moveTo(d.x + r, d.y);
+        colorPaths[hb][bl].arc(d.x, d.y, r, 0, Math.PI * 2);
+        colorN[hb][bl]++;
       }
 
-      // 1) Gray background dots directly on the white page.
-      for (let bl = 0; bl < LEVELS; bl++) {
-        ctx.fillStyle = grayStyles[bl];
-        ctx.fill(grayPaths[bl]);
-      }
-
-      // 2) Colored dots on a transparent layer, blended additively so overlaps
-      //    mix like light (red + green → yellow), then composited onto the page.
+      // Colored dots on a transparent layer, blended additively (red + green →
+      // yellow), desaturated toward gray by the drifting EP.sat, then composited.
       if (lctx) {
         lctx.clearRect(0, 0, layer.width, layer.height);
         lctx.globalCompositeOperation = "lighter";
+        const sat = EP.sat;
         for (let hb = 0; hb < HUE_BINS; hb++) {
+          const c = HUE_RGB[hb];
           for (let bl = 0; bl < LEVELS; bl++) {
-            lctx.fillStyle = colorStyles[hb][bl];
+            if (!colorN[hb][bl]) continue; // skip empty bins
+            const b = (bl + 1) / LEVELS;
+            const gray = 255 * b * 0.6;
+            const rr = Math.round(gray + (c[0] * b - gray) * sat);
+            const gg = Math.round(gray + (c[1] * b - gray) * sat);
+            const bb = Math.round(gray + (c[2] * b - gray) * sat);
+            lctx.fillStyle = `rgb(${rr}, ${gg}, ${bb})`;
             lctx.fill(colorPaths[hb][bl]);
           }
         }
