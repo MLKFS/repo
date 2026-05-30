@@ -46,9 +46,15 @@ const word = "MLKFS";
     if (!ctx) return;
 
     const word = root.dataset.word || "MLKFS";
+    // iOS Safari reports reduce-motion when Low Power Mode is on, which is very
+    // common. Rather than freezing the hero, we keep it alive but make the
+    // breathing gentler and slower so it stays comfortable.
     const reduceMotion = window.matchMedia(
       "(prefers-reduced-motion: reduce)"
     ).matches;
+    const speed = reduceMotion ? 0.0008 : 0.0019; // wave speed
+    const amp = reduceMotion ? 0.1 : 0.22; // pulse amplitude
+    const base = 1 - amp; // keeps peak radius ~constant across modes
 
     // Print-channel palette: black, blue, red, green.
     const palette: RGB[] = [
@@ -144,9 +150,7 @@ const word = "MLKFS";
           if (d.color !== c) continue;
           // A traveling wave makes the dots breathe (grow/shrink) so the word
           // feels like moving footage instead of a static screen.
-          const pulse = reduceMotion
-            ? 1
-            : 0.78 + 0.22 * Math.sin(t * 0.0019 + d.phase + d.x * 0.004);
+          const pulse = base + amp * Math.sin(t * speed + d.phase + d.x * 0.004);
           const r = d.cov * maxR * pulse;
           if (r <= 0.2) continue;
           path.moveTo(d.x + r, d.y);
@@ -165,10 +169,8 @@ const word = "MLKFS";
     function start() {
       cancelAnimationFrame(raf);
       build();
-      if (reduceMotion) {
-        draw(0);
-        return;
-      }
+      // Always animate — even under reduce-motion / Low Power Mode — just at a
+      // calmer pace set by `speed`/`amp` above.
       raf = requestAnimationFrame(loop);
     }
 
