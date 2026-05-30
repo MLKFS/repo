@@ -94,6 +94,8 @@ const word = "MLKFS";
       ci: number; // color index: 0=R, 1=G, 2=B
       seed: number; // per-dot random phase (0..1) for twinkle/flicker
       tw: number; // twinkle speed multiplier (matrix-like flicker)
+      cs: number; // matrix column fall speed
+      cp: number; // matrix column phase offset
     };
 
     let dots: Dot[] = [];
@@ -160,6 +162,11 @@ const word = "MLKFS";
           const rnd = h - Math.floor(h); // 0..1
           const h2 = Math.sin((x * 269.5 + y * 183.3) + SEED * 9277.3) * 24634.6345;
           const rnd2 = h2 - Math.floor(h2); // 0..1
+          // Column hash (x only): dots in the same column share a fall stream,
+          // re-seeded per visit, so brightness rains straight down like a
+          // terminal of fast-scrolling code.
+          const hc = Math.sin(x * 73.13 + SEED * 4177.1) * 19349.1;
+          const colR = hc - Math.floor(hc); // 0..1
           dots.push({
             x,
             y,
@@ -167,6 +174,8 @@ const word = "MLKFS";
             ci: Math.floor(rnd * 3) % 3, // random R/G/B per dot (per visit)
             seed: rnd,
             tw: 0.6 + rnd2 * 2.2, // each dot flickers at its own rate
+            cs: 0.5 + colR * 0.9, // fall speed (screens of canvas height / s)
+            cp: colR, // column phase offset (0..1)
           });
         }
       }
@@ -199,17 +208,27 @@ const word = "MLKFS";
         const dx = sway * 0.35 * Math.cos(nx + time * 0.9);
         const dy = sway * Math.cos(ny - time * 0.6);
 
-        // Per-dot random flicker (matrix): each dot pulses on its own phase and
-        // rate, layered on the smooth silk wave.
+        // Per-dot random flicker, layered on the smooth wave.
         const flickW = Math.sin(time * d.tw + d.seed * 6.283);
 
-        // Brightness swings the full 0..1 (i.e. 0..100%): the wave + flicker
-        // drive each dot from black up to fully bright and back.
+        // Matrix rain: a bright head falls down each column and leaves a fading
+        // tail, so brightness scrolls top→bottom like terminal code. `head` is
+        // the column's lit position (0..1 of height), wrapping as it falls.
+        const yN = d.y / canvas.height; // 0(top)..1(bottom)
+        const head = ((time * d.cs + d.cp) % 1 + 1) % 1;
+        let below = head - yN; // distance from the head, downward
+        if (below < 0) below += 1; // wrap so the stream is continuous
+        const tail = 0.32; // tail length (fraction of height)
+        const rain =
+          below < tail ? 1 - below / tail : 0; // 1 at head → 0 at tail end
+
+        // Combine: the falling stream dominates, with the wave + flicker adding
+        // life so it isn't a perfectly even scroll.
         const liteT = Math.min(
           1,
           Math.max(
             0,
-            0.5 + wave * 0.5 * field + flick * 0.5 * flickW + 0.18
+            0.12 + 0.95 * rain + wave * 0.25 * field + flick * 0.2 * flickW
           )
         );
 
