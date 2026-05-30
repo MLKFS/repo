@@ -106,6 +106,12 @@ const word = "MLKFS";
     let raf = 0;
     let visible = true;
 
+    // Offscreen layer for the colored dots, so they can blend additively
+    // ("lighter") among themselves and then be composited once onto the white
+    // page. Drawing additively straight onto white would wash out to white.
+    const layer = document.createElement("canvas");
+    const lctx = layer.getContext("2d");
+
     // Sample the rendered word into a coverage grid, then place one dot per cell.
     function build() {
       const cssW = root.clientWidth;
@@ -115,6 +121,8 @@ const word = "MLKFS";
       dpr = Math.min(window.devicePixelRatio || 1, 2);
       canvas.width = Math.round(cssW * dpr);
       canvas.height = Math.round(cssH * dpr);
+      layer.width = canvas.width;
+      layer.height = canvas.height;
 
       // Offscreen mask of the word, sized to the device pixels.
       const mask = document.createElement("canvas");
@@ -228,27 +236,24 @@ const word = "MLKFS";
       ];
     }
 
-    // Continuous fade from background to word, precomputed as
-    // (hue bin × nearness level × brightness level):
-    //   far  (fl≈0): light gray that lightens toward white as it shrinks → gone
-    //   near (fl≈1): saturated R/G/B that brightens with the pulse
-    // so dots ease from small gray specks into big colored cells.
-    const F_LEVELS = 5; // nearness-to-word steps
-    const fadeStyles: string[][][] = Array.from({ length: HUE_BINS }, (_, hb) => {
+    // Colored dot styles (drawn additively on the offscreen layer):
+    // (hue bin × brightness level), fully saturated R/G/B scaled toward black.
+    const colorStyles: string[][] = Array.from({ length: HUE_BINS }, (_, hb) => {
       const c = wheel((hb + 0.5) / HUE_BINS);
-      return Array.from({ length: F_LEVELS }, (_, fl) => {
-        const fAmt = fl / (F_LEVELS - 1); // 0 far → 1 on the word
-        return Array.from({ length: LEVELS }, (_, bl) => {
-          const b = (bl + 1) / LEVELS; // brightness 0..1
-          const colored: RGB = [c[0] * b, c[1] * b, c[2] * b];
-          // Gray end: light gray when large, white when small (toward page).
-          const g = 205 + (255 - 205) * (1 - b);
-          const v0 = g + (colored[0] - g) * fAmt;
-          const v1 = g + (colored[1] - g) * fAmt;
-          const v2 = g + (colored[2] - g) * fAmt;
-          return `rgb(${Math.round(v0)}, ${Math.round(v1)}, ${Math.round(v2)})`;
-        });
+      return Array.from({ length: LEVELS }, (_, bl) => {
+        const b = (bl + 1) / LEVELS;
+        return `rgb(${Math.round(c[0] * b)}, ${Math.round(c[1] * b)}, ${Math.round(
+          c[2] * b
+        )})`;
       });
+    });
+
+    // Background gray styles (drawn normally on the page): light gray when large,
+    // lightening toward white as they shrink so they fade out.
+    const grayStyles: string[] = Array.from({ length: LEVELS }, (_, bl) => {
+      const b = (bl + 1) / LEVELS;
+      const g = Math.round(205 + (255 - 205) * (1 - b));
+      return `rgb(${g}, ${g}, ${g})`;
     });
 
     function draw(t: number) {
@@ -257,13 +262,14 @@ const word = "MLKFS";
       // Slow overall pace — this breathes, it doesn't race.
       const time = (t + startOffset) * 0.00035 * paceScale;
 
-      // One Path2D per (hue bin × nearness level × brightness level): a small,
-      // fixed number of fills, drawn in normal compositing so the gray→white
-      // fade works (additive can't lighten gray to white).
-      const paths: Path2D[][][] = Array.from({ length: HUE_BINS }, () =>
-        Array.from({ length: F_LEVELS }, () =>
-          Array.from({ length: LEVELS }, () => new Path2D())
-        )
+      // Colored dots go on the offscreen layer (hue × brightness) and the gray
+      // background dots go straight on the page (brightness only).
+      const colorPaths: Path2D[][] = Array.from({ length: HUE_BINS }, () =>
+        Array.from({ length: LEVELS }, () => new Path2D())
+      );
+      const grayPaths: Path2D[] = Array.from(
+        { length: LEVELS },
+        () => new Path2D()
       );
 
       // Silk wave: two crossing low-frequency waves over position + time. Because
@@ -281,6 +287,10 @@ const word = "MLKFS";
         return 0.5 + 0.5 * (w / 2.2); // 0..1
       };
 
+      // Cap the radius so dots only gently overlap and the word stays legible —
+      // no giant circles swallowing the letters.
+      const rMax = gapR * 0.62;
+
       for (const d of dots) {
         // Independent size pulse: each dot grows and shrinks on its own phase.
         const ownPulse = 0.5 + 0.5 * Math.sin(time * d.sp + d.ph); // 0..1
@@ -290,37 +300,48 @@ const word = "MLKFS";
         const silk = silkAt(d.x, d.y);
         const pulse = silk + (ownPulse - silk) * near;
 
-        // Size eases from tiny gray specks (far) to big swelling cells (word).
-        const swell = (0.18 + 1.2 * near) * d.bias * pulse;
-        const r = (0.1 + near * 0.36 + swell * maxR / gapR) * gapR;
+        // Size eases from tiny specks (far) to nearly-touching cells (word),
+        // but is clamped so neighbours overlap only slightly.
+        const r = Math.min(rMax, (0.12 + near * 0.5 + 0.18 * pulse) * gapR);
         if (r <= 0.3) continue;
 
-        // Brightness rises with the pulse; on the word it reaches full.
         const bright = Math.min(1, 0.35 + 0.65 * pulse);
         const bl = Math.min(LEVELS - 1, Math.max(0, Math.floor(bright * LEVELS)));
-        // Nearness bin selects how colored vs. gray the dot is.
-        const fl = Math.min(
-          F_LEVELS - 1,
-          Math.max(0, Math.floor(near * F_LEVELS))
-        );
 
-        // Hue drifts over time so a dot's color changes (R→G→B and back).
-        const hb =
-          Math.floor((((d.hue0 + time * d.hsp * 0.25 + d.hph * 0.02) % 1) + 1) %
-            1 * HUE_BINS) % HUE_BINS;
-
-        const p = paths[hb][fl][bl];
-        p.moveTo(d.x + r, d.y);
-        p.arc(d.x, d.y, r, 0, Math.PI * 2);
+        if (near < 0.5) {
+          // Background gray dot (drawn on the page, fades to white as it shrinks).
+          grayPaths[bl].moveTo(d.x + r, d.y);
+          grayPaths[bl].arc(d.x, d.y, r, 0, Math.PI * 2);
+        } else {
+          // Colored dot for the word, on the additive layer.
+          const hb =
+            Math.floor((((d.hue0 + time * d.hsp * 0.25 + d.hph * 0.02) % 1) + 1) %
+              1 * HUE_BINS) % HUE_BINS;
+          const p = colorPaths[hb][bl];
+          p.moveTo(d.x + r, d.y);
+          p.arc(d.x, d.y, r, 0, Math.PI * 2);
+        }
       }
 
-      for (let hb = 0; hb < HUE_BINS; hb++) {
-        for (let fl = 0; fl < F_LEVELS; fl++) {
+      // 1) Gray background dots directly on the white page.
+      for (let bl = 0; bl < LEVELS; bl++) {
+        ctx.fillStyle = grayStyles[bl];
+        ctx.fill(grayPaths[bl]);
+      }
+
+      // 2) Colored dots on a transparent layer, blended additively so overlaps
+      //    mix like light (red + green → yellow), then composited onto the page.
+      if (lctx) {
+        lctx.clearRect(0, 0, layer.width, layer.height);
+        lctx.globalCompositeOperation = "lighter";
+        for (let hb = 0; hb < HUE_BINS; hb++) {
           for (let bl = 0; bl < LEVELS; bl++) {
-            ctx.fillStyle = fadeStyles[hb][fl][bl];
-            ctx.fill(paths[hb][fl][bl]);
+            lctx.fillStyle = colorStyles[hb][bl];
+            lctx.fill(colorPaths[hb][bl]);
           }
         }
+        lctx.globalCompositeOperation = "source-over";
+        ctx.drawImage(layer, 0, 0);
       }
     }
 
