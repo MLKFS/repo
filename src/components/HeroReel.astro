@@ -399,6 +399,20 @@ const word = "MLKFS";
       resizeTimer = window.setTimeout(start, 150);
     });
 
+    // Hidden gate: the dotted hero looks interactive — so reward the curious.
+    // 7 clicks on the animation within a short window opens the hero lab.
+    let heroTaps = 0;
+    let heroTapTimer = 0;
+    canvas.addEventListener("click", () => {
+      heroTaps += 1;
+      window.clearTimeout(heroTapTimer);
+      heroTapTimer = window.setTimeout(() => { heroTaps = 0; }, 1500);
+      if (heroTaps >= 7) {
+        heroTaps = 0;
+        window.location.href = "/hero-lab.html";
+      }
+    });
+
     start();
   }
 
