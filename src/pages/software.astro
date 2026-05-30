@@ -2,18 +2,18 @@
 import BaseLayout from "../layouts/BaseLayout.astro";
 
 const title = "Software - MLKFS";
-const description = "Open-source tools published by MLKFS.";
+const description = "Software and products MLKFS builds — from open tools to a closed-source AI service for libraries.";
 ---
 
 <BaseLayout {title} {description}>
   <section class="container-xl pt-24 pb-10">
     <div class="mx-auto max-w-3xl text-center">
-      <p class="text-sm font-medium uppercase tracking-[0.18em] text-gray-500">Open source</p>
+      <p class="text-sm font-medium uppercase tracking-[0.18em] text-gray-500">Software</p>
       <h1 class="mt-3 text-4xl md:text-5xl font-bold leading-tight text-black">
-        Software by MLKFS
+        Software &amp; products we build
       </h1>
       <p class="mt-5 text-base md:text-lg text-gray-600 leading-relaxed">
-        Small tools for real workflows.
+        Open tools for everyday workflows and closed-source products built for scale.
       </p>
     </div>
   </section>
@@ -23,7 +23,7 @@ const description = "Open-source tools published by MLKFS.";
       <div class="p-6 md:p-8">
         <div class="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
           <div>
-            <p class="text-sm font-medium uppercase tracking-[0.16em] text-gray-500">macOS CLI</p>
+            <p class="text-sm font-medium uppercase tracking-[0.16em] text-gray-500">Open source · macOS CLI</p>
             <h2 class="mt-2 text-2xl font-semibold text-black">
               <a href="/software/batt-sail" class="hover:underline underline-offset-4">batt-sail</a>
             </h2>
@@ -67,24 +67,65 @@ const description = "Open-source tools published by MLKFS.";
     </div>
   </section>
 
+  <section class="container-xl pb-12">
+    <div class="mx-auto max-w-4xl border border-black/10 bg-gray-50">
+      <div class="p-6 md:p-8">
+        <div class="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
+          <div>
+            <p class="text-sm font-medium uppercase tracking-[0.16em] text-gray-500">Closed source · Service</p>
+            <h2 class="mt-2 text-2xl font-semibold text-black">
+              PDF → EPUB for libraries
+            </h2>
+            <p class="mt-3 text-sm md:text-base text-gray-600 leading-relaxed">
+              An AI service that converts thousands of PDFs — especially theses and dissertations — into clean,
+              reflowable EPUBs for universities and large libraries.
+            </p>
+          </div>
+          <div class="flex shrink-0 flex-wrap gap-3">
+            <a
+              href="/contact"
+              class="inline-flex items-center justify-center border border-black px-5 py-2 text-sm font-medium hover:bg-black hover:text-white transition"
+            >
+              Request access
+            </a>
+          </div>
+        </div>
+        <div class="mt-6 grid gap-4 border-t border-black/10 pt-6 md:grid-cols-3">
+          <div>
+            <p class="text-xs font-medium uppercase tracking-[0.16em] text-gray-500">Reach</p>
+            <p class="mt-2 text-sm text-gray-700">More citations and discoverability for digitized work.</p>
+          </div>
+          <div>
+            <p class="text-xs font-medium uppercase tracking-[0.16em] text-gray-500">Research</p>
+            <p class="mt-2 text-sm text-gray-700">Searchable, reflowable text that speeds up reading.</p>
+          </div>
+          <div>
+            <p class="text-xs font-medium uppercase tracking-[0.16em] text-gray-500">Space</p>
+            <p class="mt-2 text-sm text-gray-700">Digitize at scale and free up shelf space.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <section class="container-xl pb-20">
     <div class="mx-auto grid max-w-4xl gap-6 md:grid-cols-3">
       <div class="border-t border-black/10 pt-5">
-        <h2 class="text-lg font-semibold text-black">Open</h2>
+        <h2 class="text-lg font-semibold text-black">Practical</h2>
         <p class="mt-2 text-sm text-gray-600 leading-relaxed">
-          Public source and project history.
+          Software built for real workflows and real scale.
         </p>
       </div>
       <div class="border-t border-black/10 pt-5">
         <h2 class="text-lg font-semibold text-black">Focused</h2>
         <p class="mt-2 text-sm text-gray-600 leading-relaxed">
-          Small tools with clear jobs.
+          Each product has a clear job and does it well.
         </p>
       </div>
       <div class="border-t border-black/10 pt-5">
-        <h2 class="text-lg font-semibold text-black">Installable</h2>
+        <h2 class="text-lg font-semibold text-black">Open or managed</h2>
         <p class="mt-2 text-sm text-gray-600 leading-relaxed">
-          Simple terminal-first setup.
+          Open tools to install, plus services we run for you.
         </p>
       </div>
     </div>

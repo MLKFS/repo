@@ -1,0 +1,198 @@
+---
+// Procedural halftone "reel": the word MLKFS is rendered as living print dots
+// (black/blue/red/green) that grow and shrink. No video file — drawn in real
+// time on a <canvas>, so it weighs ~0 KB, loops forever, and stays crisp at
+// any resolution. Falls back to plain text when JS is off or reduced-motion.
+const word = "MLKFS";
+---
+
+<div class="hero-reel" data-word={word}>
+  <canvas class="hero-reel__canvas" aria-hidden="true"></canvas>
+  <h1 class="sr-only">{word}</h1>
+  <noscript>
+    <span class="hero-reel__fallback">{word}</span>
+  </noscript>
+</div>
+
+<style>
+  .hero-reel {
+    position: relative;
+    width: 100%;
+    /* scales with viewport but stays bounded */
+    height: clamp(120px, 24vw, 260px);
+  }
+  .hero-reel__canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+  .hero-reel__fallback {
+    display: block;
+    text-align: center;
+    font-weight: 800;
+    font-size: clamp(3rem, 16vw, 9rem);
+    letter-spacing: -0.02em;
+    line-height: 1;
+  }
+</style>
+
+<script>
+  type RGB = [number, number, number];
+
+  function initHeroReel(root: HTMLElement) {
+    const canvas = root.querySelector<HTMLCanvasElement>(".hero-reel__canvas");
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const word = root.dataset.word || "MLKFS";
+    const reduceMotion = window.matchMedia(
+      "(prefers-reduced-motion: reduce)"
+    ).matches;
+
+    // Print-channel palette: black, blue, red, green.
+    const palette: RGB[] = [
+      [17, 17, 17],
+      [0, 71, 255],
+      [255, 45, 45],
+      [0, 177, 64],
+    ];
+
+    type Dot = {
+      x: number;
+      y: number;
+      cov: number; // 0..1 coverage from the text mask
+      phase: number; // per-dot animation offset
+      color: RGB;
+    };
+
+    let dots: Dot[] = [];
+    let maxR = 6;
+    let dpr = 1;
+    let raf = 0;
+    let visible = true;
+
+    // Sample the rendered word into a coverage grid, then place one dot per cell.
+    function build() {
+      const cssW = root.clientWidth;
+      const cssH = root.clientHeight;
+      if (cssW === 0 || cssH === 0) return;
+
+      dpr = Math.min(window.devicePixelRatio || 1, 2);
+      canvas.width = Math.round(cssW * dpr);
+      canvas.height = Math.round(cssH * dpr);
+
+      // Offscreen mask of the word, sized to the device pixels.
+      const mask = document.createElement("canvas");
+      mask.width = canvas.width;
+      mask.height = canvas.height;
+      const mctx = mask.getContext("2d");
+      if (!mctx) return;
+
+      mctx.fillStyle = "#000";
+      mctx.textAlign = "center";
+      mctx.textBaseline = "middle";
+
+      // Grow the font until the word fills ~92% of the width.
+      let fontPx = canvas.height;
+      const targetW = canvas.width * 0.92;
+      const font = (px: number) =>
+        `800 ${px}px ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif`;
+      mctx.font = font(fontPx);
+      let measured = mctx.measureText(word).width;
+      fontPx = Math.max(8, (fontPx * targetW) / measured);
+      mctx.font = font(fontPx);
+      mctx.clearRect(0, 0, mask.width, mask.height);
+      mctx.fillText(word, mask.width / 2, mask.height / 2);
+
+      const data = mctx.getImageData(0, 0, mask.width, mask.height).data;
+
+      // Dot grid spacing in device pixels (≈8 CSS px).
+      const gap = Math.max(6, Math.round(8 * dpr));
+      maxR = gap * 0.62;
+
+      dots = [];
+      for (let y = gap / 2; y < canvas.height; y += gap) {
+        for (let x = gap / 2; x < canvas.width; x += gap) {
+          const idx = (Math.floor(y) * mask.width + Math.floor(x)) * 4 + 3;
+          const cov = data[idx] / 255; // alpha = inside the letters
+          if (cov < 0.04) continue;
+          // Cluster colors with a low-frequency pattern + a little noise so it
+          // reads as misregistered print channels rather than random confetti.
+          const region =
+            Math.floor(x / (gap * 6)) + Math.floor(y / (gap * 6)) * 2;
+          const jitter = Math.floor((Math.sin(x * 12.9 + y * 78.2) + 1) * 1.7);
+          const color = palette[(region + jitter) % palette.length];
+          dots.push({
+            x,
+            y,
+            cov,
+            phase: (x + y) * 0.012,
+            color,
+          });
+        }
+      }
+    }
+
+    function draw(t: number) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Group draws by color to minimise fillStyle changes.
+      for (const c of palette) {
+        const path = new Path2D();
+        for (const d of dots) {
+          if (d.color !== c) continue;
+          // A traveling wave makes the dots breathe (grow/shrink) so the word
+          // feels like moving footage instead of a static screen.
+          const pulse = reduceMotion
+            ? 1
+            : 0.78 + 0.22 * Math.sin(t * 0.0019 + d.phase + d.x * 0.004);
+          const r = d.cov * maxR * pulse;
+          if (r <= 0.2) continue;
+          path.moveTo(d.x + r, d.y);
+          path.arc(d.x, d.y, r, 0, Math.PI * 2);
+        }
+        ctx.fillStyle = `rgb(${c[0]}, ${c[1]}, ${c[2]})`;
+        ctx.fill(path);
+      }
+    }
+
+    function loop(t: number) {
+      if (visible) draw(t);
+      raf = requestAnimationFrame(loop);
+    }
+
+    function start() {
+      cancelAnimationFrame(raf);
+      build();
+      if (reduceMotion) {
+        draw(0);
+        return;
+      }
+      raf = requestAnimationFrame(loop);
+    }
+
+    // Pause when the hero scrolls out of view (saves battery/CPU).
+    if ("IntersectionObserver" in window) {
+      const io = new IntersectionObserver(
+        (entries) => {
+          visible = entries[0]?.isIntersecting ?? true;
+        },
+        { threshold: 0 }
+      );
+      io.observe(root);
+    }
+
+    let resizeTimer = 0;
+    window.addEventListener("resize", () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(start, 150);
+    });
+
+    start();
+  }
+
+  document
+    .querySelectorAll<HTMLElement>(".hero-reel")
+    .forEach((el) => initHeroReel(el));
+</script>
