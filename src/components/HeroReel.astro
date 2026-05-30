@@ -266,10 +266,29 @@ const word = "MLKFS";
         )
       );
 
+      // Silk wave: two crossing low-frequency waves over position + time. Because
+      // it depends on a dot's location (not a random per-dot phase), neighbours
+      // rise and fall together, so the gray background ripples like silk in a
+      // light breeze rather than twinkling at random.
+      const wt = time * 2.2; // wave moves a bit faster than the slow base pace
+      const silkAt = (x: number, y: number) => {
+        const nx = x * 0.012;
+        const ny = y * 0.016;
+        const w =
+          Math.sin(nx + wt * 0.9) +
+          0.7 * Math.sin(ny - wt * 0.6) +
+          0.5 * Math.sin((nx + ny) * 0.6 + wt * 1.3);
+        return 0.5 + 0.5 * (w / 2.2); // 0..1
+      };
+
       for (const d of dots) {
         // Independent size pulse: each dot grows and shrinks on its own phase.
-        const pulse = 0.5 + 0.5 * Math.sin(time * d.sp + d.ph); // 0..1
+        const ownPulse = 0.5 + 0.5 * Math.sin(time * d.sp + d.ph); // 0..1
         const near = d.inWord; // 0 far → 1 on the word (already smoothstepped)
+        // Background follows the coherent silk wave; the word keeps its own
+        // lively per-dot pulse. Blend smoothly between the two by nearness.
+        const silk = silkAt(d.x, d.y);
+        const pulse = silk + (ownPulse - silk) * near;
 
         // Size eases from tiny gray specks (far) to big swelling cells (word).
         const swell = (0.18 + 1.2 * near) * d.bias * pulse;
