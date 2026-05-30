@@ -140,27 +140,5 @@ const links = [
     if (e.target.closest('#nav-toggle') || e.target.closest('.link') || e.target.closest('.logo-link')) return;
     if (inStripArea(e)) window.location.href = '/';
   });
-
-  // Hidden dev gate: tap the logo 7 times quickly (like Android's build number)
-  // to open the hero lab. A single tap still goes home — we just hold navigation
-  // briefly so taps can accumulate (clicking the <a> would otherwise reload and
-  // reset the count).
-  let tapCount = 0;
-  let tapTimer = 0;
-  logoLink?.addEventListener('click', (e) => {
-    e.preventDefault();
-    tapCount++;
-    clearTimeout(tapTimer);
-    if (tapCount >= 7) {
-      tapCount = 0;
-      window.location.href = '/hero-lab.html';
-      return;
-    }
-    // After a short pause with no further taps, treat it as a normal logo click.
-    tapTimer = setTimeout(() => {
-      tapCount = 0;
-      if (window.location.pathname !== '/') window.location.href = '/';
-    }, 450);
-  });
 </script>
 </nav>
