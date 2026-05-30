@@ -46,9 +46,37 @@ const word = "MLKFS";
     if (!ctx) return;
 
     const word = root.dataset.word || "MLKFS";
+    // iOS Safari reports reduce-motion when Low Power Mode is on, which is very
+    // common. Rather than freezing the hero, we keep it alive but make the
+    // breathing gentler and slower so it stays comfortable.
     const reduceMotion = window.matchMedia(
       "(prefers-reduced-motion: reduce)"
     ).matches;
+    const amp = reduceMotion ? 0.12 : 0.26; // radius pulse amplitude
+    const base = 1 - amp; // keeps peak radius ~constant across modes
+    const moveScale = reduceMotion ? 0.5 : 1; // gentler drift in low-power mode
+
+    // Shimmer levels: each color is pre-shaded into LEVELS brightness steps so
+    // the silk catches light on wave crests and darkens in troughs, while we
+    // still only issue a handful of fills per frame.
+    const LEVELS = 5;
+    const mix = (c: RGB, target: number, t: number): RGB =>
+      [
+        Math.round(c[0] + (target - c[0]) * t),
+        Math.round(c[1] + (target - c[1]) * t),
+        Math.round(c[2] + (target - c[2]) * t),
+      ] as RGB;
+    const shades: string[][] = palette.map((c) => {
+      const row: string[] = [];
+      for (let l = 0; l < LEVELS; l++) {
+        const k = (l + 0.5) / LEVELS; // 0..1 across the level band
+        let s: RGB;
+        if (k >= 0.5) s = mix(c, 255, (k - 0.5) * 2 * 0.5); // crest → toward white
+        else s = mix(c, 0, (0.5 - k) * 2 * 0.45); // trough → toward black
+        row.push(`rgb(${s[0]}, ${s[1]}, ${s[2]})`);
+      }
+      return row;
+    });
 
     // Print-channel palette: black, blue, red, green.
     const palette: RGB[] = [
@@ -62,8 +90,7 @@ const word = "MLKFS";
       x: number;
       y: number;
       cov: number; // 0..1 coverage from the text mask
-      phase: number; // per-dot animation offset
-      color: RGB;
+      ci: number; // palette/color index
     };
 
     let dots: Dot[] = [];
@@ -122,38 +149,57 @@ const word = "MLKFS";
           const region =
             Math.floor(x / (gap * 6)) + Math.floor(y / (gap * 6)) * 2;
           const jitter = Math.floor((Math.sin(x * 12.9 + y * 78.2) + 1) * 1.7);
-          const color = palette[(region + jitter) % palette.length];
-          dots.push({
-            x,
-            y,
-            cov,
-            phase: (x + y) * 0.012,
-            color,
-          });
+          const ci = (region + jitter) % palette.length;
+          dots.push({ x, y, cov, ci });
         }
       }
     }
 
     function draw(t: number) {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const time = t * 0.001;
+      const sway = maxR * 0.9 * moveScale; // how far dots drift (px)
 
-      // Group draws by color to minimise fillStyle changes.
-      for (const c of palette) {
-        const path = new Path2D();
-        for (const d of dots) {
-          if (d.color !== c) continue;
-          // A traveling wave makes the dots breathe (grow/shrink) so the word
-          // feels like moving footage instead of a static screen.
-          const pulse = reduceMotion
-            ? 1
-            : 0.78 + 0.22 * Math.sin(t * 0.0019 + d.phase + d.x * 0.004);
-          const r = d.cov * maxR * pulse;
-          if (r <= 0.2) continue;
-          path.moveTo(d.x + r, d.y);
-          path.arc(d.x, d.y, r, 0, Math.PI * 2);
+      // One Path2D per (color, shade level) so shimmer stays cheap:
+      // palette.length * LEVELS fills per frame, regardless of dot count.
+      const paths: Path2D[][] = palette.map(() =>
+        Array.from({ length: LEVELS }, () => new Path2D())
+      );
+
+      for (const d of dots) {
+        // Two crossing low-frequency waves at incommensurate speeds read as a
+        // light, irregular breeze rippling across silk rather than a clean pulse.
+        const nx = d.x * 0.010;
+        const ny = d.y * 0.014;
+        const w =
+          Math.sin(nx + time * 0.9) +
+          0.7 * Math.sin(ny - time * 0.6) +
+          0.5 * Math.sin((nx + ny) * 0.6 + time * 1.3);
+        const field = w / 2.2; // ~[-1, 1]
+
+        // Billow: displace along the wave gradient so the cloth lifts and falls.
+        const dx = sway * 0.35 * Math.cos(nx + time * 0.9);
+        const dy = sway * Math.cos(ny - time * 0.6);
+
+        const r = d.cov * maxR * (base + amp * field);
+        if (r <= 0.2) continue;
+
+        const lvl = Math.min(
+          LEVELS - 1,
+          Math.max(0, Math.floor((field * 0.5 + 0.5) * LEVELS))
+        );
+        const p = paths[d.ci][lvl];
+        const px = d.x + dx;
+        const py = d.y + dy;
+        p.moveTo(px + r, py);
+        p.arc(px, py, r, 0, Math.PI * 2);
+      }
+
+      for (let ci = 0; ci < palette.length; ci++) {
+        for (let l = 0; l < LEVELS; l++) {
+          ctx.fillStyle = shades[ci][l];
+          ctx.fill(paths[ci][l]);
         }
-        ctx.fillStyle = `rgb(${c[0]}, ${c[1]}, ${c[2]})`;
-        ctx.fill(path);
       }
     }
 
@@ -165,10 +211,8 @@ const word = "MLKFS";
     function start() {
       cancelAnimationFrame(raf);
       build();
-      if (reduceMotion) {
-        draw(0);
-        return;
-      }
+      // Always animate — even under reduce-motion / Low Power Mode — just with
+      // gentler drift/amplitude set by `moveScale`/`amp` above.
       raf = requestAnimationFrame(loop);
     }
 
