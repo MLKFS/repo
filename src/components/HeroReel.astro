@@ -139,7 +139,7 @@ const word = "MLKFS";
       [0, 0, 255], // B
     ];
     const HUE_BINS = 24; // quantised R→G→B→R wheel for cheap fills
-    const LEVELS = 8; // brightness steps from ~0% to 100%
+    const SOFT_TIERS = 3; // focus levels: 0 = crisp disc … 2 = soft bokeh glow
 
     // The whole hero is a screen made of dots (a full grid). MLKFS lights up the
     // dots that fall inside the letters; dots outside stay as a dim background
@@ -154,10 +154,11 @@ const word = "MLKFS";
       hAcc: number; // integrated hue-drift phase (seeded start)
       hsp: number; // per-dot hue rate 0..1
       hue0: number; // base hue (0..1 around the R/G/B wheel)
+      fAcc: number; // integrated focus phase — drifts in/out of focus
+      fsp: number; // per-dot focus rate 0..1
     };
 
     let dots: Dot[] = [];
-    let maxR = 6;
     let gapR = 8;
     let dpr = 1;
     let raf = 0;
@@ -212,10 +213,10 @@ const word = "MLKFS";
 
       const data = mctx.getImageData(0, 0, mask.width, mask.height).data;
 
-      // Dot grid spacing in device pixels (≈9 CSS px).
-      const gap = Math.max(6, Math.round(9 * dpr));
+      // Dot grid spacing in device pixels (≈6 CSS px — a fine grid; more dots
+      // read as higher resolution, and the bokeh blur stays smooth).
+      const gap = Math.max(5, Math.round(6 * dpr));
       gapR = gap;
-      maxR = gap * 0.46; // base radius; dots can swell beyond this and merge
 
       // Re-seeded hash → 0..1, different every visit.
       const rand = (a: number, b: number) => {
@@ -272,6 +273,8 @@ const word = "MLKFS";
             hAcc: r3 * 6.283 * 0.02, // seeded hue start phase
             hsp: r4, // per-dot hue rate 0..1
             hue0: r1, // base color anywhere on the R/G/B wheel
+            fAcc: r3 * 6.283, // seeded focus start phase
+            fsp: r4, // per-dot focus rate 0..1
           });
         }
       }
@@ -292,11 +295,82 @@ const word = "MLKFS";
       ];
     }
 
-    // Cache the pure R/G/B color for each hue bin; per-frame brightness and the
-    // drifting saturation are applied at fill time.
+    // Cache the pure R/G/B color for each hue bin.
     const HUE_RGB: RGB[] = Array.from({ length: HUE_BINS }, (_, hb) =>
       wheel((hb + 0.5) / HUE_BINS)
     );
+
+    // ---- Bokeh sprites -------------------------------------------------------
+    // Instead of flat-filled circles, each dot is a pre-rendered radial-gradient
+    // sprite: a crisp disc when in focus, melting into a wide soft glow when out
+    // of focus. Drawn additively, overlapping sprites pool into light — real
+    // bokeh, not just big circles. One sprite per (focus tier × hue); brightness
+    // is applied per dot via globalAlpha, so it's continuous (no banding).
+    // Saturation drifts slowly, so the cache is rebuilt only when it moves.
+    const SPRITE_PX = 64;
+    let sprites: HTMLCanvasElement[][] = [];
+    let spriteSat = -1;
+    function buildSprites(sat: number) {
+      spriteSat = sat;
+      const half = SPRITE_PX / 2;
+      const gray = 255 * 0.6;
+      sprites = Array.from({ length: SOFT_TIERS }, (_, tier) =>
+        HUE_RGB.map((c) => {
+          const cv = document.createElement("canvas");
+          cv.width = cv.height = SPRITE_PX;
+          const g = cv.getContext("2d")!;
+          const rr = Math.round(gray + (c[0] - gray) * sat);
+          const gg = Math.round(gray + (c[1] - gray) * sat);
+          const bb = Math.round(gray + (c[2] - gray) * sat);
+          const at = (a: number) => `rgba(${rr}, ${gg}, ${bb}, ${a})`;
+          const grad = g.createRadialGradient(half, half, 0, half, half, half);
+          if (tier === 0) {
+            // In focus: solid core, just enough edge softness to anti-alias.
+            grad.addColorStop(0, at(1));
+            grad.addColorStop(0.78, at(1));
+            grad.addColorStop(1, at(0));
+          } else if (tier === 1) {
+            // Slightly defocused: bright center easing out.
+            grad.addColorStop(0, at(1));
+            grad.addColorStop(0.4, at(0.85));
+            grad.addColorStop(1, at(0));
+          } else {
+            // Bokeh: a wide, airy glow that pools with its neighbours.
+            grad.addColorStop(0, at(0.85));
+            grad.addColorStop(0.35, at(0.5));
+            grad.addColorStop(1, at(0));
+          }
+          g.fillStyle = grad;
+          g.fillRect(0, 0, SPRITE_PX, SPRITE_PX);
+          return cv;
+        })
+      );
+    }
+
+    // Pointer = attention: dots near the cursor swim into focus and swell a
+    // little, as if your gaze sharpens that part of the image.
+    let pointerX = -1e9;
+    let pointerY = -1e9;
+    let pointerOn = false;
+    const toCanvasXY = (e: PointerEvent) => {
+      const rect = canvas.getBoundingClientRect();
+      pointerX = (e.clientX - rect.left) * dpr;
+      pointerY = (e.clientY - rect.top) * dpr;
+    };
+    canvas.addEventListener("pointermove", (e) => {
+      toCanvasXY(e);
+      pointerOn = true;
+    });
+    canvas.addEventListener("pointerdown", (e) => {
+      toCanvasXY(e);
+      pointerOn = true;
+    });
+    canvas.addEventListener("pointerleave", () => {
+      pointerOn = false;
+    });
+    canvas.addEventListener("pointercancel", () => {
+      pointerOn = false;
+    });
 
     function draw(t: number) {
       // Smooth, frame-rate-independent time. dt drives integrated phases so the
@@ -309,13 +383,10 @@ const word = "MLKFS";
       silkAcc += paceDt * EP.silkSpeed;
 
       ctx.clearRect(0, 0, canvas.width, canvas.height);
+      if (!lctx) return;
 
-      // Only colored letter dots — no gray background (it would outline the
-      // canvas rectangle). Batched by hue × brightness for cheap additive fills.
-      const colorPaths: Path2D[][] = Array.from({ length: HUE_BINS }, () =>
-        Array.from({ length: LEVELS }, () => new Path2D())
-      );
-      const colorN = Array.from({ length: HUE_BINS }, () => new Int16Array(LEVELS));
+      // Saturation drifts slowly — refresh the sprite cache when it has moved.
+      if (Math.abs(EP.sat - spriteSat) > 0.06) buildSprites(EP.sat);
 
       // Silk wave: crossing low-frequency waves over position + time, so the word
       // dots near the edges breathe coherently rather than twinkling at random.
@@ -334,6 +405,15 @@ const word = "MLKFS";
 
       const rMax = gapR * EP.rMax;
       const pSpan = Math.max(0, EP.pulseMax - EP.pulseMin);
+      const focusR = 90 * dpr; // pointer "attention" radius
+      const px = pointerX;
+      const py = pointerY;
+
+      // Only colored letter dots — no gray background (it would outline the
+      // canvas rectangle). Additive blending is order-independent, so sprites
+      // can be drawn in grid order and overlaps simply pool into light.
+      lctx.clearRect(0, 0, layer.width, layer.height);
+      lctx.globalCompositeOperation = "lighter";
 
       for (const d of dots) {
         const near = d.inWord; // 0 far → 1 on the word (already smoothstepped)
@@ -342,47 +422,53 @@ const word = "MLKFS";
         const sp = EP.pulseMin + d.sp * pSpan;
         d.pAcc += paceDt * sp; // integrate pulse phase
         d.hAcc += paceDt * EP.hueSpeed * 0.25 * d.hsp; // integrate hue phase
+        d.fAcc += dt * (0.12 + d.fsp * 0.45) * paceScale; // slow focus drift
         const ownPulse = 0.5 + 0.5 * Math.sin(d.pAcc);
         const silk = silkAt(d.x, d.y);
         const pulse = silk + (ownPulse - silk) * near;
 
-        const r = Math.min(
+        let r = Math.min(
           rMax,
           (EP.sizeBase + near * EP.sizeNear + EP.sizePulse * pulse) * gapR
         );
         if (r <= 0.3) continue;
 
-        const bright = Math.min(1, EP.brightBase + EP.brightPulse * pulse);
-        const bl = Math.min(LEVELS - 1, Math.max(0, Math.floor(bright * LEVELS)));
-        const hb =
-          Math.floor((((d.hue0 + d.hAcc) % 1) + 1) % 1 * HUE_BINS) % HUE_BINS;
-        colorPaths[hb][bl].moveTo(d.x + r, d.y);
-        colorPaths[hb][bl].arc(d.x, d.y, r, 0, Math.PI * 2);
-        colorN[hb][bl]++;
-      }
-
-      // Colored dots on a transparent layer, blended additively (red + green →
-      // yellow), desaturated toward gray by the drifting EP.sat, then composited.
-      if (lctx) {
-        lctx.clearRect(0, 0, layer.width, layer.height);
-        lctx.globalCompositeOperation = "lighter";
-        const sat = EP.sat;
-        for (let hb = 0; hb < HUE_BINS; hb++) {
-          const c = HUE_RGB[hb];
-          for (let bl = 0; bl < LEVELS; bl++) {
-            if (!colorN[hb][bl]) continue; // skip empty bins
-            const b = (bl + 1) / LEVELS;
-            const gray = 255 * b * 0.6;
-            const rr = Math.round(gray + (c[0] * b - gray) * sat);
-            const gg = Math.round(gray + (c[1] * b - gray) * sat);
-            const bb = Math.round(gray + (c[2] * b - gray) * sat);
-            lctx.fillStyle = `rgb(${rr}, ${gg}, ${bb})`;
-            lctx.fill(colorPaths[hb][bl]);
+        // Depth of field: each dot drifts in and out of focus on its own slow
+        // phase. Near the pointer, attention pulls dots back into focus.
+        let defocus = 0.5 + 0.5 * Math.sin(d.fAcc);
+        if (pointerOn) {
+          const dx = d.x - px;
+          const dy = d.y - py;
+          const dist2 = dx * dx + dy * dy;
+          if (dist2 < focusR * focusR) {
+            const f = 1 - Math.sqrt(dist2) / focusR;
+            const inf = f * f * (3 - 2 * f); // smoothstep falloff
+            defocus *= 1 - inf; // gaze sharpens the image
+            r *= 1 + 0.35 * inf; // and it leans toward you a little
           }
         }
-        lctx.globalCompositeOperation = "source-over";
-        ctx.drawImage(layer, 0, 0);
+
+        // Out-of-focus discs grow and dim — light spreads, energy is conserved.
+        const bright = Math.min(1, EP.brightBase + EP.brightPulse * pulse);
+        const alpha = Math.max(0.05, bright * (1 - 0.55 * defocus));
+        const rDraw = r * (1 + 1.6 * defocus);
+        const tier = defocus < 0.33 ? 0 : defocus < 0.66 ? 1 : 2;
+        const hb =
+          Math.floor((((d.hue0 + d.hAcc) % 1) + 1) % 1 * HUE_BINS) % HUE_BINS;
+
+        lctx.globalAlpha = alpha;
+        lctx.drawImage(
+          sprites[tier][hb],
+          d.x - rDraw,
+          d.y - rDraw,
+          rDraw * 2,
+          rDraw * 2
+        );
       }
+
+      lctx.globalAlpha = 1;
+      lctx.globalCompositeOperation = "source-over";
+      ctx.drawImage(layer, 0, 0);
     }
 
     function loop(t: number) {
