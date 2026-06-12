@@ -139,7 +139,7 @@ const word = "MLKFS";
       [0, 0, 255], // B
     ];
     const HUE_BINS = 24; // quantised R→G→B→R wheel for cheap fills
-    const SOFT_TIERS = 6; // focus levels: 0 = crisp disc … 5 = soft bokeh glow
+    const LEVELS = 10; // brightness steps from ~0% to 100%
 
     // The whole hero is a screen made of dots (a full grid). MLKFS lights up the
     // dots that fall inside the letters; dots outside stay as a dim background
@@ -154,8 +154,6 @@ const word = "MLKFS";
       hAcc: number; // integrated hue-drift phase (seeded start)
       hsp: number; // per-dot hue rate 0..1
       hue0: number; // base hue (0..1 around the R/G/B wheel)
-      fAcc: number; // integrated focus phase — drifts in/out of focus
-      fsp: number; // per-dot focus rate 0..1
     };
 
     let dots: Dot[] = [];
@@ -275,8 +273,6 @@ const word = "MLKFS";
             hAcc: r3 * 6.283 * 0.02, // seeded hue start phase
             hsp: r4, // per-dot hue rate 0..1
             hue0: r1, // base color anywhere on the R/G/B wheel
-            fAcc: r3 * 6.283, // seeded focus start phase
-            fsp: r4, // per-dot focus rate 0..1
           });
         }
       }
@@ -297,57 +293,24 @@ const word = "MLKFS";
       ];
     }
 
-    // Cache the pure R/G/B color for each hue bin.
-    const HUE_RGB: RGB[] = Array.from({ length: HUE_BINS }, (_, hb) =>
-      wheel((hb + 0.5) / HUE_BINS)
-    );
-
-    // ---- Bokeh sprites -------------------------------------------------------
-    // Instead of flat-filled circles, each dot is a pre-rendered radial-gradient
-    // sprite: a crisp disc when in focus, melting into a wide soft glow when out
-    // of focus. Drawn additively, overlapping sprites pool into light — real
-    // bokeh, not just big circles. One sprite per (focus tier × hue); brightness
-    // is applied per dot via globalAlpha, so it's continuous (no banding).
-    //
-    // The cache is built ONCE — never mid-animation. (Rebuilding it while the
-    // loop ran caused a synchronous hitch every few seconds, which read as the
-    // animation "ticking" instead of flowing, especially on phones.) Saturation
-    // drift is applied at composite time via a GPU canvas filter instead.
-    const SPRITE_PX = 48;
-    let sprites: HTMLCanvasElement[][] = [];
-    function buildSprites() {
-      const half = SPRITE_PX / 2;
-      sprites = Array.from({ length: SOFT_TIERS }, (_, tier) => {
-        // 0 = in focus … 1 = full bokeh; gradient morphs continuously so a dot
-        // crossing tiers never visibly pops.
-        const soft = tier / (SOFT_TIERS - 1);
-        const a0 = 1 - 0.15 * soft; // center alpha eases off as it defocuses
-        const hold = 0.78 * (1 - soft); // solid core shrinks away
-        const shoulder = Math.min(1, hold + (1 - hold) * 0.45);
-        return HUE_RGB.map((c) => {
-          const cv = document.createElement("canvas");
-          cv.width = cv.height = SPRITE_PX;
-          const g = cv.getContext("2d")!;
-          const at = (a: number) =>
-            `rgba(${Math.round(c[0])}, ${Math.round(c[1])}, ${Math.round(c[2])}, ${a})`;
-          const grad = g.createRadialGradient(half, half, 0, half, half, half);
-          grad.addColorStop(0, at(a0));
-          if (hold > 0.01) grad.addColorStop(hold, at(a0));
-          grad.addColorStop(shoulder, at(a0 * 0.55));
-          grad.addColorStop(1, at(0));
-          g.fillStyle = grad;
-          g.fillRect(0, 0, SPRITE_PX, SPRITE_PX);
-          return cv;
-        });
+    // Crisp dot styles: (hue bin × brightness level), fully saturated R/G/B
+    // scaled toward black. Built once; the drifting saturation is applied at
+    // composite time via a GPU filter, so nothing is rebuilt mid-animation.
+    const colorStyles: string[][] = Array.from({ length: HUE_BINS }, (_, hb) => {
+      const c = wheel((hb + 0.5) / HUE_BINS);
+      return Array.from({ length: LEVELS }, (_, bl) => {
+        const b = (bl + 1) / LEVELS;
+        return `rgb(${Math.round(c[0] * b)}, ${Math.round(c[1] * b)}, ${Math.round(
+          c[2] * b
+        )})`;
       });
-    }
-    buildSprites();
-    // Canvas 2D filters (for the drifting saturation) — supported everywhere
-    // modern; on older Safari we just stay fully saturated. Never a hitch.
+    });
+    // Canvas 2D filters (for the drifting saturation). On older Safari without
+    // ctx.filter we just stay fully saturated — never a hitch either way.
     const canFilter = typeof ctx.filter === "string";
 
-    // Pointer = attention: dots near the cursor swim into focus and swell a
-    // little, as if your gaze sharpens that part of the image.
+    // Pointer = gravity: the cursor is a little mass. Dots within its reach are
+    // pulled toward it and pile up — a gravitational well in the field of light.
     let pointerX = -1e9;
     let pointerY = -1e9;
     let pointerOn = false;
@@ -401,15 +364,17 @@ const word = "MLKFS";
 
       const rMax = gapR * EP.rMax;
       const pSpan = Math.max(0, EP.pulseMax - EP.pulseMin);
-      const focusR = 90 * dpr; // pointer "attention" radius
+      // Gravity well at the pointer: reach + how hard dots collapse toward it.
+      const gravR = 120 * dpr;
+      const gravR2 = gravR * gravR;
       const px = pointerX;
       const py = pointerY;
 
-      // Only colored letter dots — no gray background (it would outline the
-      // canvas rectangle). Additive blending is order-independent, so sprites
-      // can be drawn in grid order and overlaps simply pool into light.
-      lctx.clearRect(0, 0, layer.width, layer.height);
-      lctx.globalCompositeOperation = "lighter";
+      // Crisp dots batched by hue × brightness for cheap additive fills.
+      const colorPaths: Path2D[][] = Array.from({ length: HUE_BINS }, () =>
+        Array.from({ length: LEVELS }, () => new Path2D())
+      );
+      const colorN = Array.from({ length: HUE_BINS }, () => new Int16Array(LEVELS));
 
       for (const d of dots) {
         const near = d.inWord; // 0 far → 1 on the word (already smoothstepped)
@@ -418,7 +383,6 @@ const word = "MLKFS";
         const sp = EP.pulseMin + d.sp * pSpan;
         d.pAcc += paceDt * sp; // integrate pulse phase
         d.hAcc += paceDt * EP.hueSpeed * 0.25 * d.hsp; // integrate hue phase
-        d.fAcc += dt * (0.12 + d.fsp * 0.45) * paceScale; // slow focus drift
         const ownPulse = 0.5 + 0.5 * Math.sin(d.pAcc);
         const silk = silkAt(d.x, d.y);
         const pulse = silk + (ownPulse - silk) * near;
@@ -429,43 +393,49 @@ const word = "MLKFS";
         );
         if (r <= 0.3) continue;
 
-        // Depth of field: each dot drifts in and out of focus on its own slow
-        // phase. Near the pointer, attention pulls dots back into focus.
-        let defocus = 0.5 + 0.5 * Math.sin(d.fAcc);
+        // Gravitational pull: dots within reach of the cursor fall toward it,
+        // accelerating as they get closer (so they pool into a dense, brighter
+        // knot of light right under the pointer), and never overshoot it.
+        let dx = d.x;
+        let dy = d.y;
         if (pointerOn) {
-          const dx = d.x - px;
-          const dy = d.y - py;
-          const dist2 = dx * dx + dy * dy;
-          if (dist2 < focusR * focusR) {
-            const f = 1 - Math.sqrt(dist2) / focusR;
-            const inf = f * f * (3 - 2 * f); // smoothstep falloff
-            defocus *= 1 - inf; // gaze sharpens the image
-            r *= 1 + 0.35 * inf; // and it leans toward you a little
+          const vx = px - d.x;
+          const vy = py - d.y;
+          const dist2 = vx * vx + vy * vy;
+          if (dist2 < gravR2 && dist2 > 1) {
+            const dist = Math.sqrt(dist2);
+            const t = 1 - dist / gravR; // 0 at edge → 1 at the well
+            const ease = t * t; // accelerate toward the mass
+            const travel = Math.min(dist, ease * gravR * 0.85);
+            dx = d.x + (vx / dist) * travel;
+            dy = d.y + (vy / dist) * travel;
+            r *= 1 + 0.45 * ease; // mass piles up, the knot grows denser
           }
         }
 
-        // Out-of-focus discs grow and dim — light spreads, energy is conserved.
         const bright = Math.min(1, EP.brightBase + EP.brightPulse * pulse);
-        const alpha = Math.max(0.05, bright * (1 - 0.55 * defocus));
-        const rDraw = r * (1 + 1.6 * defocus);
-        const tier = Math.min(SOFT_TIERS - 1, Math.floor(defocus * SOFT_TIERS));
+        const bl = Math.min(LEVELS - 1, Math.max(0, Math.floor(bright * LEVELS)));
         const hb =
           Math.floor((((d.hue0 + d.hAcc) % 1) + 1) % 1 * HUE_BINS) % HUE_BINS;
-
-        lctx.globalAlpha = alpha;
-        lctx.drawImage(
-          sprites[tier][hb],
-          d.x - rDraw,
-          d.y - rDraw,
-          rDraw * 2,
-          rDraw * 2
-        );
+        colorPaths[hb][bl].moveTo(dx + r, dy);
+        colorPaths[hb][bl].arc(dx, dy, r, 0, Math.PI * 2);
+        colorN[hb][bl]++;
       }
 
-      lctx.globalAlpha = 1;
+      // Colored dots on the transparent layer, blended additively (red + green →
+      // yellow), then composited once onto the page. The drifting saturation is
+      // applied as a GPU filter on that single draw — smooth, never rebuilt.
+      lctx.clearRect(0, 0, layer.width, layer.height);
+      lctx.globalCompositeOperation = "lighter";
+      for (let hb = 0; hb < HUE_BINS; hb++) {
+        for (let bl = 0; bl < LEVELS; bl++) {
+          if (!colorN[hb][bl]) continue; // skip empty bins
+          lctx.fillStyle = colorStyles[hb][bl];
+          lctx.fill(colorPaths[hb][bl]);
+        }
+      }
       lctx.globalCompositeOperation = "source-over";
-      // Drifting saturation is applied here, on the single composite draw — a
-      // GPU filter, smooth and continuous, instead of rebuilding sprite colors.
+
       const wantFilter = canFilter && EP.sat < 0.98;
       if (wantFilter) ctx.filter = `saturate(${Math.round(EP.sat * 100)}%)`;
       ctx.drawImage(layer, 0, 0);
