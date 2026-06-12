@@ -139,7 +139,7 @@ const word = "MLKFS";
       [0, 0, 255], // B
     ];
     const HUE_BINS = 24; // quantised R→G→B→R wheel for cheap fills
-    const LEVELS = 10; // brightness steps from ~0% to 100%
+    const LEVELS = 8; // brightness steps from ~0% to 100%
 
     // The whole hero is a screen made of dots (a full grid). MLKFS lights up the
     // dots that fall inside the letters; dots outside stay as a dim background
@@ -157,6 +157,7 @@ const word = "MLKFS";
     };
 
     let dots: Dot[] = [];
+    let maxR = 6;
     let gapR = 8;
     let dpr = 1;
     let raf = 0;
@@ -173,8 +174,6 @@ const word = "MLKFS";
       const cssW = root.clientWidth;
       const cssH = root.clientHeight;
       if (cssW === 0 || cssH === 0) return;
-      builtW = cssW;
-      builtH = cssH;
 
       dpr = Math.min(window.devicePixelRatio || 1, 2);
       canvas.width = Math.round(cssW * dpr);
@@ -213,10 +212,12 @@ const word = "MLKFS";
 
       const data = mctx.getImageData(0, 0, mask.width, mask.height).data;
 
-      // Dot grid spacing in device pixels (≈6 CSS px — a fine grid; more dots
-      // read as higher resolution, and the bokeh blur stays smooth).
-      const gap = Math.max(5, Math.round(6 * dpr));
+      // Dot grid spacing in CSS px: tighter on phones (more dots → higher
+      // resolution on the small screen) and the usual spacing on larger screens.
+      const gapCss = cssW < 640 ? 6 : 9;
+      const gap = Math.max(5, Math.round(gapCss * dpr));
       gapR = gap;
+      maxR = gap * 0.46; // base radius; dots can swell beyond this and merge
 
       // Re-seeded hash → 0..1, different every visit.
       const rand = (a: number, b: number) => {
@@ -293,46 +294,11 @@ const word = "MLKFS";
       ];
     }
 
-    // Crisp dot styles: (hue bin × brightness level), fully saturated R/G/B
-    // scaled toward black. Built once; the drifting saturation is applied at
-    // composite time via a GPU filter, so nothing is rebuilt mid-animation.
-    const colorStyles: string[][] = Array.from({ length: HUE_BINS }, (_, hb) => {
-      const c = wheel((hb + 0.5) / HUE_BINS);
-      return Array.from({ length: LEVELS }, (_, bl) => {
-        const b = (bl + 1) / LEVELS;
-        return `rgb(${Math.round(c[0] * b)}, ${Math.round(c[1] * b)}, ${Math.round(
-          c[2] * b
-        )})`;
-      });
-    });
-    // Canvas 2D filters (for the drifting saturation). On older Safari without
-    // ctx.filter we just stay fully saturated — never a hitch either way.
-    const canFilter = typeof ctx.filter === "string";
-
-    // Pointer = gravity: the cursor is a little mass. Dots within its reach are
-    // pulled toward it and pile up — a gravitational well in the field of light.
-    let pointerX = -1e9;
-    let pointerY = -1e9;
-    let pointerOn = false;
-    const toCanvasXY = (e: PointerEvent) => {
-      const rect = canvas.getBoundingClientRect();
-      pointerX = (e.clientX - rect.left) * dpr;
-      pointerY = (e.clientY - rect.top) * dpr;
-    };
-    canvas.addEventListener("pointermove", (e) => {
-      toCanvasXY(e);
-      pointerOn = true;
-    });
-    canvas.addEventListener("pointerdown", (e) => {
-      toCanvasXY(e);
-      pointerOn = true;
-    });
-    canvas.addEventListener("pointerleave", () => {
-      pointerOn = false;
-    });
-    canvas.addEventListener("pointercancel", () => {
-      pointerOn = false;
-    });
+    // Cache the pure R/G/B color for each hue bin; per-frame brightness and the
+    // drifting saturation are applied at fill time.
+    const HUE_RGB: RGB[] = Array.from({ length: HUE_BINS }, (_, hb) =>
+      wheel((hb + 0.5) / HUE_BINS)
+    );
 
     function draw(t: number) {
       // Smooth, frame-rate-independent time. dt drives integrated phases so the
@@ -345,7 +311,13 @@ const word = "MLKFS";
       silkAcc += paceDt * EP.silkSpeed;
 
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      if (!lctx) return;
+
+      // Only colored letter dots — no gray background (it would outline the
+      // canvas rectangle). Batched by hue × brightness for cheap additive fills.
+      const colorPaths: Path2D[][] = Array.from({ length: HUE_BINS }, () =>
+        Array.from({ length: LEVELS }, () => new Path2D())
+      );
+      const colorN = Array.from({ length: HUE_BINS }, () => new Int16Array(LEVELS));
 
       // Silk wave: crossing low-frequency waves over position + time, so the word
       // dots near the edges breathe coherently rather than twinkling at random.
@@ -364,17 +336,6 @@ const word = "MLKFS";
 
       const rMax = gapR * EP.rMax;
       const pSpan = Math.max(0, EP.pulseMax - EP.pulseMin);
-      // Gravity well at the pointer: reach + how hard dots collapse toward it.
-      const gravR = 120 * dpr;
-      const gravR2 = gravR * gravR;
-      const px = pointerX;
-      const py = pointerY;
-
-      // Crisp dots batched by hue × brightness for cheap additive fills.
-      const colorPaths: Path2D[][] = Array.from({ length: HUE_BINS }, () =>
-        Array.from({ length: LEVELS }, () => new Path2D())
-      );
-      const colorN = Array.from({ length: HUE_BINS }, () => new Int16Array(LEVELS));
 
       for (const d of dots) {
         const near = d.inWord; // 0 far → 1 on the word (already smoothstepped)
@@ -387,59 +348,43 @@ const word = "MLKFS";
         const silk = silkAt(d.x, d.y);
         const pulse = silk + (ownPulse - silk) * near;
 
-        let r = Math.min(
+        const r = Math.min(
           rMax,
           (EP.sizeBase + near * EP.sizeNear + EP.sizePulse * pulse) * gapR
         );
         if (r <= 0.3) continue;
 
-        // Gravitational pull: dots within reach of the cursor fall toward it,
-        // accelerating as they get closer (so they pool into a dense, brighter
-        // knot of light right under the pointer), and never overshoot it.
-        let dx = d.x;
-        let dy = d.y;
-        if (pointerOn) {
-          const vx = px - d.x;
-          const vy = py - d.y;
-          const dist2 = vx * vx + vy * vy;
-          if (dist2 < gravR2 && dist2 > 1) {
-            const dist = Math.sqrt(dist2);
-            const t = 1 - dist / gravR; // 0 at edge → 1 at the well
-            const ease = t * t; // accelerate toward the mass
-            const travel = Math.min(dist, ease * gravR * 0.85);
-            dx = d.x + (vx / dist) * travel;
-            dy = d.y + (vy / dist) * travel;
-            r *= 1 + 0.45 * ease; // mass piles up, the knot grows denser
-          }
-        }
-
         const bright = Math.min(1, EP.brightBase + EP.brightPulse * pulse);
         const bl = Math.min(LEVELS - 1, Math.max(0, Math.floor(bright * LEVELS)));
         const hb =
           Math.floor((((d.hue0 + d.hAcc) % 1) + 1) % 1 * HUE_BINS) % HUE_BINS;
-        colorPaths[hb][bl].moveTo(dx + r, dy);
-        colorPaths[hb][bl].arc(dx, dy, r, 0, Math.PI * 2);
+        colorPaths[hb][bl].moveTo(d.x + r, d.y);
+        colorPaths[hb][bl].arc(d.x, d.y, r, 0, Math.PI * 2);
         colorN[hb][bl]++;
       }
 
-      // Colored dots on the transparent layer, blended additively (red + green →
-      // yellow), then composited once onto the page. The drifting saturation is
-      // applied as a GPU filter on that single draw — smooth, never rebuilt.
-      lctx.clearRect(0, 0, layer.width, layer.height);
-      lctx.globalCompositeOperation = "lighter";
-      for (let hb = 0; hb < HUE_BINS; hb++) {
-        for (let bl = 0; bl < LEVELS; bl++) {
-          if (!colorN[hb][bl]) continue; // skip empty bins
-          lctx.fillStyle = colorStyles[hb][bl];
-          lctx.fill(colorPaths[hb][bl]);
+      // Colored dots on a transparent layer, blended additively (red + green →
+      // yellow), desaturated toward gray by the drifting EP.sat, then composited.
+      if (lctx) {
+        lctx.clearRect(0, 0, layer.width, layer.height);
+        lctx.globalCompositeOperation = "lighter";
+        const sat = EP.sat;
+        for (let hb = 0; hb < HUE_BINS; hb++) {
+          const c = HUE_RGB[hb];
+          for (let bl = 0; bl < LEVELS; bl++) {
+            if (!colorN[hb][bl]) continue; // skip empty bins
+            const b = (bl + 1) / LEVELS;
+            const gray = 255 * b * 0.6;
+            const rr = Math.round(gray + (c[0] * b - gray) * sat);
+            const gg = Math.round(gray + (c[1] * b - gray) * sat);
+            const bb = Math.round(gray + (c[2] * b - gray) * sat);
+            lctx.fillStyle = `rgb(${rr}, ${gg}, ${bb})`;
+            lctx.fill(colorPaths[hb][bl]);
+          }
         }
+        lctx.globalCompositeOperation = "source-over";
+        ctx.drawImage(layer, 0, 0);
       }
-      lctx.globalCompositeOperation = "source-over";
-
-      const wantFilter = canFilter && EP.sat < 0.98;
-      if (wantFilter) ctx.filter = `saturate(${Math.round(EP.sat * 100)}%)`;
-      ctx.drawImage(layer, 0, 0);
-      if (wantFilter) ctx.filter = "none";
     }
 
     function loop(t: number) {
@@ -491,17 +436,9 @@ const word = "MLKFS";
     }
 
     let resizeTimer = 0;
-    let builtW = 0;
-    let builtH = 0;
     window.addEventListener("resize", () => {
       window.clearTimeout(resizeTimer);
-      resizeTimer = window.setTimeout(() => {
-        // Mobile browsers fire resize when the URL bar collapses during scroll;
-        // the hero's size hasn't changed, so a full rebuild (and its hitch)
-        // isn't needed — only rebuild when the dimensions really moved.
-        if (root.clientWidth === builtW && root.clientHeight === builtH) return;
-        start();
-      }, 150);
+      resizeTimer = window.setTimeout(start, 150);
     });
 
     // Hidden gate: the dotted hero looks interactive — so reward the curious.
