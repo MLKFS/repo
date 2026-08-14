@@ -8,6 +8,8 @@ export interface Props {
   description?: string;
   canonical?: string;
   ogType?: string;
+  image?: string;
+  imageAlt?: string;
   article?: {
     publishedTime?: string;
     author?: string;
@@ -18,8 +20,13 @@ const {
   description = "MLKFS builds and applies technology across audio-visual, software, and creative work.",
   canonical,
   ogType = "website",
+  image = "/og/mlkfs.png",
+  imageAlt = "MLKFS",
   article
 } = Astro.props;
+
+// Social cards need absolute URLs; Astro.site is set in astro.config.mjs.
+const imageURL = new URL(image, Astro.site ?? Astro.url).href;
 ---
 <html lang="en" class="h-full bg-white text-black">
   <head>
@@ -34,12 +41,18 @@ const {
     <meta property="og:type" content={ogType} />
     {canonical && <meta property="og:url" content={canonical} />}
     <meta property="og:site_name" content="MLKFS" />
+    <meta property="og:image" content={imageURL} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content={imageAlt} />
     {article?.publishedTime && <meta property="article:published_time" content={article.publishedTime} />}
     {article?.author && <meta property="article:author" content={article.author} />}
     {article?.author && <meta name="author" content={article.author} />}
-    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content={title} />
     <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={imageURL} />
+    <meta name="twitter:image:alt" content={imageAlt} />
   </head>
 
   <body class="min-h-screen flex flex-col bg-white">

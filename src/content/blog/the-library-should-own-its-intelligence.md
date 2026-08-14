@@ -17,7 +17,7 @@ It may make it considerably more important.
 
 The question facing libraries is therefore not simply whether they should use AI. It is whether they should allow another generation of information infrastructure to be built entirely outside their control.
 
-The American Library Association's newly adopted guidance on artificial intelligence already places public purpose, privacy, human judgment and institutional responsibility at the center of this discussion. It asks libraries to evaluate AI not merely as software, but against professional values, community needs and public trust. (Ala)
+The American Library Association's newly adopted guidance on artificial intelligence already places public purpose, privacy, human judgment and institutional responsibility at the center of this discussion. It asks libraries to evaluate AI not merely as software, but against professional values, community needs and public trust. ([ALA](https://www.ala.org/tools/standards-and-guidelines/guidance-use-artificial-intelligence-libraries), [adoption announcement](https://www.ala.org/news/2026/07/ala-council-adopts-guidance-use-artificial-intelligence-libraries))
 
 That is a necessary beginning.
 
@@ -107,7 +107,7 @@ A sequence of questions can reveal political interests, medical concerns, religi
 
 Sending every interaction to an external AI provider therefore creates a privacy problem that is deeper than ordinary analytics.
 
-The ALA's 2026 guidance explicitly treats AI systems, vendor integrations, privacy and institutional responsibility as library governance issues rather than merely technical decisions. (Ala)
+The ALA's 2026 guidance explicitly treats AI systems, vendor integrations, privacy and institutional responsibility as library governance issues rather than merely technical decisions. ([ALA](https://www.ala.org/tools/standards-and-guidelines/guidance-use-artificial-intelligence-libraries))
 
 A stronger architectural response is possible:
 
@@ -156,7 +156,7 @@ The system could provide:
 * passages suitable for discovery where legally permitted,
 * and an immediate route back to the original source.
 
-AI translation is already capable of useful work on scientific and technical material; WIPO, for example, operates its own neural machine-translation system for patents and scientific texts across numerous languages. (Dünya Fikri Mülkiyet Örgütü)
+AI translation is already capable of useful work on scientific and technical material; WIPO, for example, operates its own neural machine-translation system for patents and scientific texts across numerous languages. ([WIPO](https://www.wipo.int/en/web/ai-tools-services/wipo-translate))
 
 Libraries could take the idea further.
 
@@ -262,9 +262,9 @@ This is important because "AI use" is itself not one action.
 
 Pre-training a model, building a search index, generating embeddings, performing text-and-data analysis, using retrieval-augmented generation and displaying passages to users are technically and legally different activities.
 
-The U.S. Copyright Office has itself emphasized that different uses of copyrighted material during AI development and deployment may require separate analysis, specifically distinguishing initial training from later uses such as RAG. (Telif Hakkı Ofisi)
+The U.S. Copyright Office has itself emphasized that different uses of copyrighted material during AI development and deployment may require separate analysis, specifically distinguishing initial training from later uses such as RAG. ([U.S. Copyright Office](https://www.copyright.gov/ai/Copyright-and-Artificial-Intelligence-Part-3-Generative-AI-Training-Report-Pre-Publication-Version.pdf))
 
-Its 2025 report also describes a spectrum rather than a universal rule: some noncommercial research or analytical uses may weigh differently from systems built from unlawfully obtained material to generate substitutive commercial content. (Telif Hakkı Ofisi)
+Its 2025 report also describes a spectrum rather than a universal rule: some noncommercial research or analytical uses may weigh differently from systems built from unlawfully obtained material to generate substitutive commercial content. ([U.S. Copyright Office](https://www.copyright.gov/ai/Copyright-and-Artificial-Intelligence-Part-3-Generative-AI-Training-Report-Pre-Publication-Version.pdf))
 
 That uncertainty is not a reason for libraries to avoid the field.
 
