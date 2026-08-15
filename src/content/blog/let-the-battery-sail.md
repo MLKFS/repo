@@ -17,7 +17,7 @@ Holding a lithium-ion battery at 100% for long periods is generally considered l
 
 But a ceiling describes only one number: the top.
 
-It says less about what happens afterwards — when the machine reaches that number and then stays plugged in for another eleven days. A battery that is being held near a single target does not simply stop. It drifts down slightly, gets topped back up, drifts again. Whether those small corrections matter, and how much, is not something we are in a position to state as settled fact.
+It says less about what happens afterwards — when the machine reaches that number and then stays plugged in for another eleven days. Holding a battery near a narrow target can still involve periodic corrective charging as its state of charge changes over time. Whether those small corrections materially affect long-term degradation, and by how much, is not something we are in a position to state as settled fact.
 
 What we can do is design around a different assumption.
 
