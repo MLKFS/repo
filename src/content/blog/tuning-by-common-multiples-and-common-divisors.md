@@ -7,7 +7,15 @@ author: "Ege Batuhan Akgül"
 organization: "MLKFS"
 ---
 
-Standard guitar tuning gives us E–A–D–G–B–E, but the frequencies underneath those names are compromises. In 12-tone equal temperament, only the octave is a pure whole-number ratio; every other interval is displaced by a few cents from the simple ratios that a vibrating string naturally produces.
+Ask a violinist whether A♭ and G♯ are the same note, and the honest answer is: it depends on how you got there. On a piano they are the same key, by construction. But in tuning systems built from pure ratios, a G♯ reached as a major third above E and an A♭ reached as a chain of descending fifths land on *different frequencies* — and which one ends up higher depends on the system. In Pythagorean tuning G♯ sits about 23 cents above A♭; in quarter-comma meantone it sits about 41 cents *below*. The note is not a point. It is a decision.
+
+Twelve-tone equal temperament is the decision that makes every such pair identical: split the octave into twelve equal steps, and A♭ and G♯ collapse into one key. The price is that only the octave remains a pure whole-number ratio; every other interval is displaced by a few cents from the simple ratios a vibrating string naturally produces. The equal-tempered major third, for instance, is 13.7 cents sharp of the pure 5:4 third.
+
+Guitarists have all met this number, whether they know it or not — usually on the B string. Tune the open B so it makes a *pure* major third with the open G and it lands roughly 14 cents flat of equal temperament; the open G chord glows, and half the other chords on the neck sour. There is even a famous accidental recording of it: the intro of Red Hot Chili Peppers' "Scar Tissue". Guitarist Paul Davids, trying to reproduce its sound, [measured John Frusciante's B string at about 13–14 cents flat](https://www.guitarworld.com/news/john-frusciante-paul-davids-scar-tissue) — almost exactly the just-intonation correction. Frusciante later confirmed the measurement and punctured the mystique in the same breath: it wasn't deliberate. "I just was out of tune… it sounded good so nobody ever said anything."
+
+That accident is the right frame for everything below: a few cents of displacement, in the right direction, is not noise. It is a different tuning system briefly showing through.
+
+Standard guitar tuning gives us E–A–D–G–B–E, but the frequencies underneath those names are compromises of exactly this kind.
 
 What happens if we keep EADGBE as the identity and playable geometry of the instrument, but stop treating equal temperament as the only possible target for the six open strings?
 
