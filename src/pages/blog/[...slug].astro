@@ -134,6 +134,31 @@ const pubDateHuman = post.data.pubDate.toLocaleDateString("en-US", {
   .essay strong {
     color: #000;
   }
+  .essay code {
+    font-size: 0.9em;
+    background: rgb(0 0 0 / 0.04);
+    border-radius: 0.25rem;
+    padding: 0.125rem 0.375rem;
+    color: #000;
+  }
+  .essay table {
+    margin-top: 1.5em;
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9375rem;
+    line-height: 1.5;
+  }
+  .essay th {
+    text-align: left;
+    font-weight: 600;
+    color: #000;
+    border-bottom: 2px solid rgb(0 0 0 / 0.2);
+    padding: 0.5rem 0.75rem 0.5rem 0;
+  }
+  .essay td {
+    border-bottom: 1px solid rgb(0 0 0 / 0.1);
+    padding: 0.5rem 0.75rem 0.5rem 0;
+  }
   @media (max-width: 640px) {
     .essay {
       font-size: 1rem;
