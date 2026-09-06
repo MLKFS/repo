@@ -81,6 +81,7 @@ sudo batt-sail reset                            # restore BCLM=100
 sudo batt-sail reset --remove-config            # also delete saved config
 sudo batt-sail daemon install                   # install LaunchDaemon (6h interval)
 sudo batt-sail daemon uninstall                 # bootout and remove the plist
+sudo batt-sail uninstall                        # completely remove daemon, config, logs, binary and reset SMC to 100%
 ```
 
 ### Hysteresis rules
@@ -120,6 +121,29 @@ Installs `/Library/LaunchDaemons/com.mlkfs.batt-sail.plist`:
 `daemon uninstall` boots the daemon out and removes the plist. It does **not**
 reset the charge limit — run `sudo batt-sail reset` explicitly if you want
 `BCLM=100`.
+
+---
+
+## Uninstall
+
+To completely remove `batt-sail` from your system:
+
+```bash
+sudo batt-sail uninstall
+```
+
+This single command:
+1. Resets the SMC charge limit back to `100%` (safe charging state).
+2. Unloads and removes the LaunchDaemon plist (`com.mlkfs.batt-sail.plist`).
+3. Deletes saved configuration (`/Library/Application Support/batt-sail`).
+4. Deletes daemon log files (`/var/log/batt-sail.*`).
+5. Removes the binary from `/usr/local/bin/batt-sail`.
+
+Alternatively, from the repository source folder:
+
+```bash
+sudo make uninstall
+```
 
 ---
 

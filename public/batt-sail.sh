@@ -3,7 +3,7 @@ set -eu
 
 INSTALL_PATH="/usr/local/bin/batt-sail"
 BIN_URL="https://mlkfs.com/downloads/batt-sail-darwin-universal"
-BIN_SHA256="f924c02085edc088a1bec6835786b6953f0aafa3bda4c66aa556084e8d8aaa12"
+BIN_SHA256="e995533eeedb018d5010946f4ccf8885a3f920db4927f715f200536d54dd6327"
 WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/batt-sail.XXXXXX")"
 
 cleanup() {

@@ -81,7 +81,8 @@ struct BatteryInfo {
 
     var isCharging: Bool {
         state.localizedCaseInsensitiveContains("charging") &&
-            !state.localizedCaseInsensitiveContains("not charging")
+            !state.localizedCaseInsensitiveContains("not charging") &&
+            !state.localizedCaseInsensitiveContains("discharging")
     }
 }
 
@@ -154,6 +155,7 @@ struct AppConfig: Codable {
 
 struct ConfigStore {
     static func save(_ config: AppConfig) throws {
+        try Validator.requireRoot()
         try Validator.validateBand(
             min: config.minPercent,
             max: config.maxPercent,
@@ -162,11 +164,13 @@ struct ConfigStore {
         let path = URL(fileURLWithPath: AppConfig.sharedPath)
         try FileManager.default.createDirectory(
             at: path.deletingLastPathComponent(),
-            withIntermediateDirectories: true
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o755]
         )
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         try encoder.encode(config).write(to: path, options: .atomic)
+        try? FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: AppConfig.sharedPath)
     }
 
     static func load() throws -> AppConfig {
@@ -190,6 +194,7 @@ struct ConfigStore {
 
     @discardableResult
     static func remove() throws -> Bool {
+        try Validator.requireRoot()
         let path = AppConfig.sharedPath
         guard FileManager.default.fileExists(atPath: path) else { return false }
         try FileManager.default.removeItem(atPath: path)
@@ -286,12 +291,8 @@ struct IntelBCLMBackend: ChargeLimitBackend {
     func writeChargeLimit(_ percent: Int) throws {
         try withSMC { smc in
             try smc.writeUInt8(key: "BCLM", value: UInt8(percent))
-            // BFCL mirrors BCLM on some Intel machines; ignore if absent.
-            do {
-                try smc.writeUInt8(key: "BFCL", value: UInt8(percent))
-            } catch SMCError.keyNotFound(_) {
-                return
-            }
+            // BFCL mirrors BCLM on some Intel machines; ignore if absent or unsupported.
+            try? smc.writeUInt8(key: "BFCL", value: UInt8(percent))
         }
     }
 
@@ -385,6 +386,9 @@ enum HardwareBridge {
     static func readBatteryInfo() throws -> BatteryInfo {
         let out = try Shell.run("/usr/bin/pmset", ["-g", "batt"])
         guard let line = out.split(separator: "\n").first(where: { $0.contains("%") }) else {
+            if out.localizedCaseInsensitiveContains("no battery") || !out.localizedCaseInsensitiveContains("InternalBattery") {
+                throw BattSailError.backend("No internal battery detected on this Mac.")
+            }
             throw BattSailError.shell("Unable to parse battery state from pmset output.")
         }
 
@@ -406,10 +410,10 @@ enum HardwareBridge {
 
     private static func normalize(state: String, output: String) -> String {
         let lower = state.lowercased()
-        if lower.contains("charged") { return "charged" }
         if lower.contains("not charging") { return "not charging" }
-        if lower.contains("charging") { return "charging" }
         if lower.contains("discharging") { return "discharging" }
+        if lower.contains("charged") { return "charged" }
+        if lower.contains("charging") { return "charging" }
         if output.localizedCaseInsensitiveContains("AC Power") { return "AC Power" }
         if output.localizedCaseInsensitiveContains("Battery Power") { return "Battery Power" }
         return state
@@ -450,12 +454,19 @@ enum HysteresisEngine {
         )
 
         if batteryPercent >= config.maxPercent {
-            let compensation = backend.kind == .intelBCLM ? config.intelDisplayCompensation : 0
-            let raw = config.minPercent - compensation
-            let target = Swift.max(40, raw)
-            let reason = compensation > 0
-                ? "battery >= max (\(config.maxPercent)%); lower limit to \(target)% (min \(config.minPercent) - comp \(compensation))"
-                : "battery >= max (\(config.maxPercent)%); lower limit to \(target)%"
+            let target: Int
+            let reason: String
+            if backend.kind == .appleSiliconCHWA {
+                target = 80
+                reason = "battery >= max (\(config.maxPercent)%); lower Apple Silicon limit to 80%"
+            } else {
+                let compensation = backend.kind == .intelBCLM ? config.intelDisplayCompensation : 0
+                let raw = config.minPercent - compensation
+                target = Swift.max(40, raw)
+                reason = compensation > 0
+                    ? "battery >= max (\(config.maxPercent)%); lower limit to \(target)% (min \(config.minPercent) - comp \(compensation))"
+                    : "battery >= max (\(config.maxPercent)%); lower limit to \(target)%"
+            }
             return (target, .lowerLimit, reason)
         }
         if batteryPercent <= config.minPercent {
@@ -520,21 +531,45 @@ enum Daemon {
         "com.mlkfs.bclm-sail"
     ]
 
+    static func defaultBinaryPath() -> String {
+        if FileManager.default.fileExists(atPath: "/usr/local/bin/batt-sail") {
+            return "/usr/local/bin/batt-sail"
+        }
+        if FileManager.default.fileExists(atPath: "/opt/homebrew/bin/batt-sail") {
+            return "/opt/homebrew/bin/batt-sail"
+        }
+        if let currentPath = Bundle.main.executablePath,
+           FileManager.default.fileExists(atPath: currentPath),
+           !currentPath.contains("/.build/") {
+            return currentPath
+        }
+        return "/usr/local/bin/batt-sail"
+    }
+
+    private static func bootoutService(label: String, plistPath: String? = nil) {
+        _ = try? Shell.run("/bin/launchctl", ["bootout", "system/\(label)"])
+        if let plist = plistPath, FileManager.default.fileExists(atPath: plist) {
+            _ = try? Shell.run("/bin/launchctl", ["bootout", "system", plist])
+        }
+    }
+
     static func install(
-        binaryPath: String = "/usr/local/bin/batt-sail",
+        binaryPath: String? = nil,
         startInterval: Int = Daemon.defaultStartInterval
     ) throws {
         try Validator.requireRoot()
 
+        let resolvedBinaryPath = binaryPath ?? defaultBinaryPath()
+
         // Bootout any older versions of this label, and any known legacy labels.
         bootoutLegacyDaemons()
         if isLoaded(label: Daemon.label) {
-            _ = try? Shell.run("/bin/launchctl", ["bootout", "system", Daemon.plistPath])
+            bootoutService(label: Daemon.label, plistPath: Daemon.plistPath)
         }
 
         let plist: [String: Any] = [
             "Label": Daemon.label,
-            "ProgramArguments": [binaryPath, "enforce"],
+            "ProgramArguments": [resolvedBinaryPath, "enforce"],
             "RunAtLoad": true,
             "StartInterval": startInterval,
             "StandardOutPath": Daemon.stdoutPath,
@@ -561,7 +596,7 @@ enum Daemon {
         try Validator.requireRoot()
         var bootedOut = false
         if isLoaded(label: Daemon.label) {
-            _ = try? Shell.run("/bin/launchctl", ["bootout", "system", Daemon.plistPath])
+            bootoutService(label: Daemon.label, plistPath: Daemon.plistPath)
             bootedOut = true
         }
         var removed = false
@@ -581,7 +616,7 @@ enum Daemon {
     static func stop() throws {
         try Validator.requireRoot()
         if isLoaded(label: Daemon.label) {
-            _ = try Shell.run("/bin/launchctl", ["bootout", "system", Daemon.plistPath])
+            bootoutService(label: Daemon.label, plistPath: Daemon.plistPath)
         }
     }
 
@@ -596,8 +631,11 @@ enum Daemon {
         for legacy in legacyLabels {
             let legacyPlist = "/Library/LaunchDaemons/\(legacy).plist"
             if isLoaded(label: legacy) {
-                _ = try? Shell.run("/bin/launchctl", ["bootout", "system", legacyPlist])
+                bootoutService(label: legacy, plistPath: legacyPlist)
                 booted.append(legacy)
+            }
+            if FileManager.default.fileExists(atPath: legacyPlist) {
+                try? FileManager.default.removeItem(atPath: legacyPlist)
             }
         }
         return booted
@@ -633,6 +671,9 @@ enum Daemon {
         }
         guard args.last == "enforce" else {
             return "plist ProgramArguments must end with 'enforce'"
+        }
+        if let binPath = args.first, !FileManager.default.isExecutableFile(atPath: binPath) {
+            return "target binary '\(binPath)' does not exist or is not executable"
         }
         if dict["StartInterval"] == nil {
             return "plist StartInterval missing"
@@ -674,6 +715,7 @@ struct BattSail: ParsableCommand {
             Custom.self,
             PresetCmd.self,
             ResetCmd.self,
+            UninstallCmd.self,
             Doctor.self,
             BackendCmd.self,
             DaemonCmd.self
@@ -704,13 +746,22 @@ struct Status: ParsableCommand {
 
         if let battery = battery {
             let recommendation: String
-            if battery.percentage >= config.maxPercent {
-                let target = Swift.max(40, config.minPercent - (backend.kind == .intelBCLM ? config.intelDisplayCompensation : 0))
-                recommendation = "would lower limit to \(target)%"
-            } else if battery.percentage <= config.minPercent {
-                recommendation = "would set limit to 100% to resume charging"
+            if let (target, decision, _) = try? HysteresisEngine.target(
+                forBattery: battery.percentage,
+                config: config,
+                backend: backend
+            ) {
+                switch decision {
+                case .lowerLimit:
+                    let t = target ?? 80
+                    recommendation = (limit == t) ? "hold; limit is already \(t)%" : "would lower limit to \(t)%"
+                case .resumeCharging:
+                    recommendation = (limit == 100) ? "hold; limit is already 100%" : "would set limit to 100% to resume charging"
+                case .hold:
+                    recommendation = "hold; battery is inside band"
+                }
             } else {
-                recommendation = "hold; battery is inside band"
+                recommendation = "unavailable"
             }
             print("Next Action: \(recommendation)")
         }
@@ -747,6 +798,9 @@ struct Custom: ParsableCommand {
     var noCompensation = false
 
     mutating func run() throws {
+        if noCompensation && compensation != nil {
+            throw BattSailError.validation("Cannot specify both --compensation and --no-compensation.")
+        }
         let resolvedCompensation: Int
         if noCompensation {
             resolvedCompensation = 0
@@ -785,6 +839,9 @@ struct PresetCmd: ParsableCommand {
     mutating func run() throws {
         guard type == "desktop" else {
             throw BattSailError.validation("Unknown preset: \(type). Available presets: desktop.")
+        }
+        if noCompensation && compensation != nil {
+            throw BattSailError.validation("Cannot specify both --compensation and --no-compensation.")
         }
         let resolvedCompensation: Int
         if noCompensation {
@@ -825,6 +882,73 @@ struct ResetCmd: ParsableCommand {
     }
 }
 
+struct UninstallCmd: ParsableCommand {
+    static var configuration = CommandConfiguration(
+        commandName: "uninstall",
+        abstract: "Completely uninstall batt-sail (reset limit to 100%, remove daemon, config, logs, and binary)"
+    )
+
+    @Flag(name: .customLong("keep-binary"), help: "Do not delete the batt-sail binary")
+    var keepBinary = false
+
+    mutating func run() throws {
+        try Validator.requireRoot()
+
+        print("Uninstalling batt-sail...")
+
+        // 1. Reset SMC charging limit to 100%
+        let backend = BackendFactory.make()
+        do {
+            let wrote = try backend.writeIfNeeded(100)
+            print("1. SMC charge limit: \(wrote ? "reset to 100%" : "already 100%")")
+        } catch {
+            print("1. SMC charge limit: warning - failed to reset limit (\(error))")
+        }
+
+        // 2. Stop and remove LaunchDaemon
+        let daemonResult = try Daemon.uninstall()
+        print("2. LaunchDaemon: \(daemonResult.bootedOut ? "booted out" : "not loaded"), plist: \(daemonResult.removedPlist ? "removed" : "none")")
+
+        // 3. Remove configuration and directory
+        let configRemoved = try ConfigStore.remove()
+        let configDir = URL(fileURLWithPath: AppConfig.sharedPath).deletingLastPathComponent().path
+        if let contents = try? FileManager.default.contentsOfDirectory(atPath: configDir), contents.isEmpty {
+            try? FileManager.default.removeItem(atPath: configDir)
+        }
+        print("3. Config: \(configRemoved ? "removed \(AppConfig.sharedPath)" : "none")")
+
+        // 4. Remove log files
+        var removedLogs: [String] = []
+        for logPath in [Daemon.stdoutPath, Daemon.stderrPath] {
+            if FileManager.default.fileExists(atPath: logPath) {
+                try? FileManager.default.removeItem(atPath: logPath)
+                removedLogs.append(logPath)
+            }
+        }
+        print("4. Logs: \(removedLogs.isEmpty ? "none" : removedLogs.joined(separator: ", "))")
+
+        // 5. Binary
+        if keepBinary {
+            print("5. Binary: kept as requested.")
+        } else {
+            var removedAnyBin = false
+            for binPath in ["/usr/local/bin/batt-sail", "/opt/homebrew/bin/batt-sail"] {
+                if FileManager.default.fileExists(atPath: binPath) {
+                    try? FileManager.default.removeItem(atPath: binPath)
+                    print("5. Binary: removed \(binPath)")
+                    removedAnyBin = true
+                    break
+                }
+            }
+            if !removedAnyBin {
+                print("5. Binary: not found at standard install locations")
+            }
+        }
+
+        print("\nbatt-sail uninstallation complete.")
+    }
+}
+
 struct Doctor: ParsableCommand {
     static var configuration = CommandConfiguration(abstract: "Run environment checks")
 
@@ -852,7 +976,16 @@ struct Doctor: ParsableCommand {
         }
 
         print("Write Privileges: \(getuid() == 0 ? "root (can write SMC)" : "not root; write commands require sudo")")
-        print("Config: \(ConfigStore.exists ? "present at \(AppConfig.sharedPath)" : "missing (defaults will be used)")")
+        if ConfigStore.exists {
+            do {
+                let cfg = try ConfigStore.load()
+                print("Config: valid at \(AppConfig.sharedPath) (mode=\(cfg.mode.rawValue), min=\(cfg.minPercent), max=\(cfg.maxPercent), intelDisplayCompensation=\(cfg.intelDisplayCompensation))")
+            } catch {
+                print("Config: error loading \(AppConfig.sharedPath) - \(error)")
+            }
+        } else {
+            print("Config: missing (defaults will be used)")
+        }
 
         if let plistError = Daemon.validatePlist() {
             print("LaunchDaemon plist: \(plistError)")
@@ -862,8 +995,12 @@ struct Doctor: ParsableCommand {
         print("LaunchDaemon loaded: \(Daemon.isLoaded() ? "yes" : "no") (\(Daemon.label))")
 
         let logDir = "/var/log"
-        let logWritable = FileManager.default.isWritableFile(atPath: logDir) || getuid() == 0
-        print("Log dir \(logDir) writable: \(logWritable ? "yes" : "no")")
+        if getuid() == 0 {
+            let logWritable = FileManager.default.isWritableFile(atPath: logDir)
+            print("Log dir \(logDir) writable: \(logWritable ? "yes" : "no")")
+        } else {
+            print("Log dir \(logDir) writable: yes (managed by root LaunchDaemon)")
+        }
 
         let conflicting = Daemon.legacyLabels.filter { Daemon.isLoaded(label: $0) }
         if conflicting.isEmpty {
@@ -912,9 +1049,12 @@ struct DaemonInstall: ParsableCommand {
     @Option(name: .customLong("interval"), help: "Override StartInterval in seconds (default 21600 = 6h)")
     var interval: Int?
 
+    @Option(name: .customLong("bin"), help: "Override path to batt-sail binary")
+    var binaryPath: String?
+
     mutating func run() throws {
         let resolvedInterval = interval ?? Daemon.defaultStartInterval
-        try Daemon.install(startInterval: resolvedInterval)
+        try Daemon.install(binaryPath: binaryPath, startInterval: resolvedInterval)
         print("Daemon installed at \(Daemon.plistPath)")
         print("Label: \(Daemon.label)")
         print("StartInterval: \(resolvedInterval) seconds")

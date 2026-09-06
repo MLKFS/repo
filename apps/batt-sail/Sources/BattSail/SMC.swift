@@ -45,10 +45,13 @@ extension UInt32 {
     }
 
     var fourCharString: String {
-        String(describing: UnicodeScalar((self >> 24) & 0xff)!) +
-            String(describing: UnicodeScalar((self >> 16) & 0xff)!) +
-            String(describing: UnicodeScalar((self >> 8) & 0xff)!) +
-            String(describing: UnicodeScalar(self & 0xff)!)
+        let bytes: [UInt8] = [
+            UInt8((self >> 24) & 0xff),
+            UInt8((self >> 16) & 0xff),
+            UInt8((self >> 8) & 0xff),
+            UInt8(self & 0xff)
+        ]
+        return String(bytes: bytes, encoding: .ascii) ?? String(format: "0x%08X", self)
     }
 }
 
@@ -161,6 +164,10 @@ final class SMC {
 
         let result = IOServiceOpen(service, mach_task_self_, 0, &connection)
         guard result == kIOReturnSuccess else { throw SMCError.failedToOpen(result) }
+    }
+
+    deinit {
+        close()
     }
 
     func close() {
