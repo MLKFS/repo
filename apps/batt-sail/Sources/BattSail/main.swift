@@ -184,8 +184,15 @@ struct ConfigStore {
         return config
     }
 
-    static func loadOrDefault() -> AppConfig {
-        (try? load()) ?? AppConfig.defaultConfig
+    static func loadOrDefault(path: String = AppConfig.sharedPath) throws -> AppConfig {
+        do {
+            let data = try Data(contentsOf: URL(fileURLWithPath: path))
+            let config = try JSONDecoder().decode(AppConfig.self, from: data)
+            try Validator.validateBand(min: config.minPercent, max: config.maxPercent, compensation: config.intelDisplayCompensation)
+            return config
+        } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
+            return AppConfig.defaultConfig
+        }
     }
 
     static var exists: Bool {
@@ -266,6 +273,13 @@ protocol ChargeLimitBackend {
 extension ChargeLimitBackend {
     /// Writes only if the current limit differs from `percent`.
     /// Returns true when an SMC write occurred.
+    func verifyChargeLimit(_ expected: Int) throws {
+        let actual = try readChargeLimit()
+        guard actual == expected else {
+            throw BattSailError.backend("SMC write verification failed: expected \(expected)%, read \(actual)%.")
+        }
+    }
+
     func writeIfNeeded(_ percent: Int) throws -> Bool {
         try Validator.validateWriteLimit(percent, backend: self)
         try Validator.requireRoot()
@@ -273,6 +287,7 @@ extension ChargeLimitBackend {
             return false
         }
         try writeChargeLimit(percent)
+        try verifyChargeLimit(percent)
         return true
     }
 }
@@ -440,7 +455,7 @@ struct EnforcementPlan {
 enum HysteresisEngine {
     /// Compute the SMC target for the current battery reading.
     /// At max: target = minPercent - compensation (Intel BCLM only); clamped to >= 40.
-    /// At min: target = 100.
+    /// At min: cap Intel charging at maxPercent - compensation; CHWA resumes at 100.
     /// In between: nil (no action).
     static func target(
         forBattery batteryPercent: Int,
@@ -470,7 +485,10 @@ enum HysteresisEngine {
             return (target, .lowerLimit, reason)
         }
         if batteryPercent <= config.minPercent {
-            return (100, .resumeCharging, "battery <= min (\(config.minPercent)%); restore limit to 100% to resume charging")
+            let target = backend.kind == .intelBCLM
+                ? Swift.max(40, config.maxPercent - config.intelDisplayCompensation)
+                : 100
+            return (target, .resumeCharging, "battery <= min (\(config.minPercent)%); set limit to \(target)% to resume charging")
         }
         return (nil, .hold, "battery is inside sailing band \(config.minPercent)..\(config.maxPercent); no action")
     }
@@ -521,7 +539,7 @@ enum HysteresisEngine {
 enum Daemon {
     static let label = "com.mlkfs.batt-sail"
     static let plistPath = "/Library/LaunchDaemons/\(label).plist"
-    static let defaultStartInterval = 21_600 // 6 hours
+    static let defaultStartInterval = 60 // Check transitions once per minute.
     static let stdoutPath = "/var/log/batt-sail.out"
     static let stderrPath = "/var/log/batt-sail.err"
 
@@ -553,6 +571,19 @@ enum Daemon {
         }
     }
 
+    static func validateInstall(binaryPath: String, startInterval: Int) throws {
+        guard startInterval > 0, startInterval <= Int(Int32.max) else {
+            throw BattSailError.validation("Daemon interval must be between 1 and \(Int32.max) seconds.")
+        }
+        var isDirectory: ObjCBool = false
+        guard binaryPath.hasPrefix("/"),
+              FileManager.default.fileExists(atPath: binaryPath, isDirectory: &isDirectory),
+              !isDirectory.boolValue,
+              FileManager.default.isExecutableFile(atPath: binaryPath) else {
+            throw BattSailError.validation("Daemon binary must be an absolute path to an executable file: \(binaryPath)")
+        }
+    }
+
     static func install(
         binaryPath: String? = nil,
         startInterval: Int = Daemon.defaultStartInterval
@@ -560,6 +591,7 @@ enum Daemon {
         try Validator.requireRoot()
 
         let resolvedBinaryPath = binaryPath ?? defaultBinaryPath()
+        try validateInstall(binaryPath: resolvedBinaryPath, startInterval: startInterval)
 
         // Bootout any older versions of this label, and any known legacy labels.
         bootoutLegacyDaemons()
@@ -730,7 +762,7 @@ struct Status: ParsableCommand {
     )
 
     mutating func run() throws {
-        let config = ConfigStore.loadOrDefault()
+        let config = try ConfigStore.loadOrDefault()
         let backend = BackendFactory.make()
         let battery = try? HardwareBridge.readBatteryInfo()
         let limit = try? backend.readChargeLimit()
@@ -756,7 +788,8 @@ struct Status: ParsableCommand {
                     let t = target ?? 80
                     recommendation = (limit == t) ? "hold; limit is already \(t)%" : "would lower limit to \(t)%"
                 case .resumeCharging:
-                    recommendation = (limit == 100) ? "hold; limit is already 100%" : "would set limit to 100% to resume charging"
+                    let t = target ?? 100
+                    recommendation = (limit == t) ? "hold; limit is already \(t)%" : "would set limit to \(t)% to resume charging"
                 case .hold:
                     recommendation = "hold; battery is inside band"
                 }
@@ -775,7 +808,7 @@ struct Enforce: ParsableCommand {
     var dryRun = false
 
     mutating func run() throws {
-        let config = ConfigStore.loadOrDefault()
+        let config = try ConfigStore.loadOrDefault()
         let backend = BackendFactory.make()
         let plan = try HysteresisEngine.enforce(config: config, backend: backend, dryRun: dryRun)
         printPlan(plan, backend: backend, dryRun: dryRun)
@@ -1043,10 +1076,10 @@ struct DaemonCmd: ParsableCommand {
 struct DaemonInstall: ParsableCommand {
     static var configuration = CommandConfiguration(
         commandName: "install",
-        abstract: "Install and bootstrap the LaunchDaemon (runs every 6 hours)"
+        abstract: "Install and bootstrap the LaunchDaemon (runs every 60 seconds)"
     )
 
-    @Option(name: .customLong("interval"), help: "Override StartInterval in seconds (default 21600 = 6h)")
+    @Option(name: .customLong("interval"), help: "Override StartInterval in seconds (default 60 = 1 minute)")
     var interval: Int?
 
     @Option(name: .customLong("bin"), help: "Override path to batt-sail binary")

@@ -20,7 +20,7 @@ Sailing uses **hysteresis** between two thresholds:
 
 ```
 maxPercent    e.g. 80   -- when battery reaches this, we lower the SMC limit
-minPercent    e.g. 70   -- only when battery falls this low do we restore 100%
+minPercent    e.g. 70   -- only when battery falls this low do we restore the upper charge limit
 ```
 
 While the battery is anywhere between `minPercent` and `maxPercent`, batt-sail
@@ -79,7 +79,7 @@ sudo batt-sail enforce --dry-run                # show decision, no SMC write
 sudo batt-sail enforce                          # apply the decision once
 sudo batt-sail reset                            # restore BCLM=100
 sudo batt-sail reset --remove-config            # also delete saved config
-sudo batt-sail daemon install                   # install LaunchDaemon (6h interval)
+sudo batt-sail daemon install                   # install LaunchDaemon (60s interval)
 sudo batt-sail daemon uninstall                 # bootout and remove the plist
 sudo batt-sail uninstall                        # completely remove daemon, config, logs, binary and reset SMC to 100%
 ```
@@ -88,11 +88,11 @@ sudo batt-sail uninstall                        # completely remove daemon, conf
 
 - `battery >= maxPercent` → write `max(40, minPercent − intelDisplayCompensation)`
   (Intel only; Apple Silicon CHWA writes 80).
-- `battery <= minPercent` → write `100` to resume charging.
+- `battery <= minPercent` → write `maxPercent − intelDisplayCompensation` on Intel to resume charging without opening the ceiling to 100% (Apple Silicon CHWA uses 100).
 - otherwise → no SMC write.
 
 A write is skipped if the current SMC value already equals the target, so a
-daemon ticking every 6 hours produces zero unnecessary SMC writes when nothing
+daemon ticking every 60 seconds produces zero unnecessary SMC writes when nothing
 has changed.
 
 ---
@@ -110,7 +110,7 @@ Installs `/Library/LaunchDaemons/com.mlkfs.batt-sail.plist`:
 - `Label` — `com.mlkfs.batt-sail`
 - `ProgramArguments` — `/usr/local/bin/batt-sail enforce`
 - `RunAtLoad` — `true`
-- `StartInterval` — `21600` (6 hours; override with `--interval`)
+- `StartInterval` — `60` (1 minute; override with `--interval`)
 - `StandardOutPath` — `/var/log/batt-sail.out`
 - `StandardErrorPath` — `/var/log/batt-sail.err`
 - `chmod 644`, `chown root:wheel`
@@ -175,9 +175,23 @@ honoured for backwards compatibility.
 - `intelDisplayCompensation` must be `>= 0` and `min − compensation >= 40`.
 - SMC writes require root.
 - A write is never issued if the current SMC value already equals the target.
+- Each SMC write is read back; a mismatched value fails explicitly.
+- Missing configuration uses defaults; malformed or unreadable configuration fails explicitly.
+- Daemon binary and interval are validated before stopping existing services.
 - Unsupported macOS / hardware fails clearly; no fallback to random helpers.
 
 ---
+
+## Regression tests
+
+```bash
+python3 Tests/run.py
+```
+
+These checks cover Intel charge/resume thresholds, holding inside the band,
+Apple Silicon targets, legacy configuration decoding, invalid configuration errors,
+daemon installation validation, and SMC write verification. They do not access
+the SMC and run with Command Line Tools without full Xcode/XCTest.
 
 ## Test checklist (target Intel Monterey)
 
